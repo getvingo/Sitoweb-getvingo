@@ -1,0 +1,15 @@
+# ambiente locale
+.venv/
+.tools/
+__pycache__/
+*.pyc
+.DS_Store
+
+# dati e segreti: MAI su GitHub (database, foto, DDT, chiave di sessione, log)
+instance/
+*.db
+*.db.*
+*.log
+secret_key
+.env
+*.env
