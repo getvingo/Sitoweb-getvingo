@@ -1,7 +1,8 @@
 Flask==3.1.3
 Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.0.55
 reportlab==5.0.1
 anthropic==0.125.0
 boto3==1.42.97
 gunicorn==23.0.0
-psycopg2-binary==2.9.10
+psycopg[binary]==3.2.13
