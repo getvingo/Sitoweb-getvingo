@@ -1101,7 +1101,9 @@ def archivio_ddt():
     if stato not in FILTRI_STATO or (stato == "annullati" and g.utente.ruolo != "admin"):
         stato = "tutti"
 
-    query = Ddt.query.join(Movimento, Movimento.ddt_id == Ddt.id).join(Veicolo).distinct()
+    # niente DISTINCT sui DDT: Postgres non sa confrontare la colonna JSON dati_fissi.
+    # I filtri scelgono gli id, i DDT si caricano a parte (una volta sola ciascuno)
+    query = Ddt.query.join(Movimento, Movimento.ddt_id == Ddt.id).join(Veicolo)
     if not g.utente.interno:
         sid = g.utente.sede_id or -1
         query = query.filter(or_(Movimento.da_sede_id == sid, Movimento.a_sede_id == sid,
@@ -1142,9 +1144,12 @@ def archivio_ddt():
     if _data("al"):
         query = query.filter(Ddt.emesso_at < _data("al") + timedelta(days=1))
 
-    elenco = query.order_by(Ddt.anno.desc(), Ddt.numero.desc()).limit(300).all()
+    def _ddt_di(q):
+        return Ddt.query.filter(Ddt.id.in_(q.with_entities(Ddt.id).statement))
+
+    elenco = _ddt_di(query).order_by(Ddt.anno.desc(), Ddt.numero.desc()).limit(300).all()
     avanzati = [k for k in f if k != "q" and f[k]]
-    tutti = visibili.all()
+    tutti = _ddt_di(visibili).all()
     attivi = [d for d in tutti if not d.annullato_at]
     conteggi = {"tutti": sum(1 for d in attivi if d.movimento.stato != "chiuso"), "annullati": len(tutti) - len(attivi)}
     for d in attivi:
