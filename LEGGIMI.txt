@@ -1,0 +1,111 @@
+GETVINGO — PORTALE (MVP fase 1)
+==============================
+
+Stack: Python 3.9 + Flask + SQLite (in produzione: Postgres via
+DOVIN_DATABASE_URL). PDF del DDT con ReportLab.
+
+AVVIO IN LOCALE
+---------------
+Dalla cartella app/:
+
+  .venv/bin/flask --app getvingo demo          # dati di prova (cancella il db!)
+  .venv/bin/flask --app getvingo run --port 5050   # apri http://127.0.0.1:5050
+
+(Non usare la porta 5000: su macOS è occupata da AirPlay e risponde 403.)
+
+Accessi demo (password "demo"):
+  admin@demo.it        amministratore (può anche cancellare DDT)
+  ufficio@demo.it      ufficio (predispone DDT, gestione)
+  autista@demo.it      autista
+  carrozzeria@demo.it  fornitore "Carrozzeria Rossi"
+  officina@demo.it     fornitore "Officina Bianchi"
+
+Primo avvio "vero" (senza dati demo):
+  .venv/bin/flask --app getvingo init-db
+
+PIÙ CONCESSIONARIE (CLIENTI) SULLO STESSO PORTALE
+-------------------------------------------------
+Ogni cliente ha dati completamente separati (auto, DDT con numerazione
+propria, sedi, fornitori, adesivi, utenti). Nuovo cliente:
+  .venv/bin/flask --app getvingo nuovo-cliente
+(chiede ragione sociale, email e password dell'amministratore). Il
+cliente poi configura da solo sedi, fornitori, utenti e adesivi da Gestione.
+I database creati prima di questa versione si aggiornano da soli al primo
+avvio (copia di sicurezza: instance/dovin.db.prima-multi-cliente).
+
+BACKUP
+------
+  .venv/bin/flask --app getvingo backup
+Salva database + foto in instance/backup/dovin-<data>.zip e tiene le
+ultime 14 copie. Da lanciare ogni giorno (cron sul server).
+Postgres: DOVIN_DATABASE_URL=postgresql://... e pip install
+psycopg2-binary; i backup li fa il servizio che ospita il database.
+
+ARCHIVIO DDT
+------------
+Dopo ogni salvataggio che cambia un DDT (emissione, firme, arrivo,
+modifiche, annullamento) il PDF di quella versione viene archiviato: una
+copia per versione, mai sovrascritte (tabella ddt_archivio: data, sha256,
+percorso). Destinazione:
+  - storage S3 compatibile (R2, Backblaze, AWS...) se impostato:
+      DOVIN_S3_BUCKET, DOVIN_S3_ENDPOINT, DOVIN_S3_REGIONE,
+      DOVIN_S3_CHIAVE_ID, DOVIN_S3_SEGRETO
+  - altrimenti instance/archivio-ddt/ (incluso nel backup)
+Un invio non riuscito non blocca il DDT. Recupero delle copie mancanti:
+  .venv/bin/flask --app getvingo archivia-ddt
+Sul server gira ogni ora da solo. Configurazione R2: deploy/GUIDA-HOSTINGER.txt
+
+SICUREZZA
+---------
+- Password di almeno 8 caratteri; ognuno la cambia dal menu (avatar ->
+  Cambia password). Le password "demo" vanno cambiate prima di un uso vero
+- Dopo 8 tentativi sbagliati in 15 minuti l'accesso si blocca per 15 minuti
+- Cookie di sessione protetti (solo HTTPS quando DOVIN_BASE_URL è https)
+- Informativa privacy su /privacy (BOZZA: da far verificare a un consulente)
+
+Test:
+  .venv/bin/python -m unittest discover -s tests -v
+
+COSA FA
+-------
+- /t/<codice>     tocco NFC: adesivo libero -> abbinamento, altrimenti
+                  scheda veicolo
+- Abbinamento     foto etichetta VIN -> barcode o OCR -> conferma
+                  manuale; se il VIN arriva dal gestionale, marca /
+                  modello / colore si compilano da soli
+- Partenza        destinazione + causale + vettore -> DDT numerato
+                  emesso prima della partenza
+- Arrivo          conferma (o luogo diverso + note); consegna a cliente
+                  = auto "consegnata" e adesivo liberato
+- Posizione       ogni tap salva il GPS; "Parcheggiata qui" la aggiorna
+- Gestione        adesivi, sedi, vettori, utenti, dati azienda, import
+                  CSV dal gestionale
+
+PROVA CON TELEFONO E ADESIVI VERI
+---------------------------------
+Il GPS dal browser funziona solo in HTTPS e gli adesivi devono puntare a
+un indirizzo raggiungibile dal telefono. Serve quindi mettere il portale
+online (dominio + HTTPS) e impostare:
+  DOVIN_BASE_URL=https://<dominio>   (link scritti sugli adesivi)
+  DOVIN_SECRET_KEY=<stringa casuale lunga>
+Gli adesivi si scrivono con l'app "NFC Tools" (record URL).
+
+Prova veloce senza dominio (tunnel Cloudflare gratuito, cambia indirizzo
+a ogni avvio):
+  ./avvia-demo.sh
+Mostra l'indirizzo pubblico https e la pagina dei link per gli adesivi.
+Avvia in modalità demo (DOVIN_DEMO=1): l'admin può eliminare anche auto
+con DDT. Senza demo si eliminano solo auto senza DDT.
+
+Online stabile su VPS Hostinger (dominio fisso, HTTPS): deploy/GUIDA-HOSTINGER.txt
+
+ASSISTENTE IA (Claude)
+----------------------
+Detta del DDT ("sono Luca e porto l'auto a fare i cerchi neri dalla
+carrozzeria Rossi") e chat sui mezzi (testo e voce) usano Claude
+(modello claude-opus-5-5). Serve una chiave API Anthropic sul server:
+  export ANTHROPIC_API_KEY=sk-ant-...
+  .venv/bin/flask --app getvingo run --port 5050
+Senza chiave il portale funziona normalmente e l'assistente mostra un
+avviso. La dettatura vocale usa il riconoscimento del browser (Chrome,
+Safari su iPhone).

@@ -1,0 +1,118 @@
+GETVINGO — PUBBLICARE IL PORTALE SU HOSTINGER (VPS)
+==================================================
+
+Risultato: portale sempre online su https://<tuo-dominio>, anche a Mac
+spento. Gli adesivi NFC si scrivono una volta e non cambiano più.
+
+
+1. COMPRARE IL VPS
+------------------
+- Hostinger -> VPS -> piano KVM 1 (basta per demo e primi clienti)
+- Sistema operativo: "Ubuntu 24.04" (semplice, SENZA pannelli tipo
+  CyberPanel / Coolify)
+- Imposta una password di root e annotala
+- A fine attivazione, in hPanel -> VPS -> Panoramica, annota l'indirizzo
+  IP (es. 123.45.67.89)
+
+
+2. COLLEGARE IL DOMINIO
+-----------------------
+hPanel -> Domini -> <tuo dominio> -> DNS / Nameserver -> Gestisci record DNS
+
+Aggiungi un record:
+  Tipo:   A
+  Nome:   demo            (diventa demo.tuodominio.it; "@" = dominio nudo)
+  Punta a: <IP del VPS>
+  TTL:    lasciare il predefinito
+
+Aspetta 5-30 minuti. Verifica dal Mac:
+  ping demo.tuodominio.it        (deve rispondere l'IP del VPS)
+
+
+3. PUBBLICARE (dal Mac, un comando)
+-----------------------------------
+Nel Terminale:
+
+  cd /Users/enrico/Desktop/CLAUDE/GETVINGO/app
+  ./deploy/pubblica.sh <IP-del-VPS> demo.tuodominio.it demo
+
+- Chiede la password di root del VPS (una volta)
+- Dura 2-4 minuti la prima volta
+- "demo" alla fine = l'admin può eliminare anche auto con DDT.
+  Per un cliente vero ometterlo.
+- Il primo invio copia anche i dati attuali (auto, DDT, foto). Gli invii
+  successivi aggiornano solo il programma: i dati sul server non vengono
+  mai sovrascritti.
+
+Alla fine compare:
+  GETVINGO ONLINE:   https://demo.tuodominio.it
+  LINK ADESIVI NFC: https://demo.tuodominio.it/admin/tag
+
+
+4. ADESIVI NFC
+--------------
+Apri il LINK ADESIVI NFC, entra come admin@demo.it / demo, scrivi i link
+con NFC Tools (record URL/URI). Da qui in poi restano validi.
+
+
+AGGIORNARE DOPO UNA MODIFICA
+----------------------------
+Stesso comando del punto 3.
+
+
+ASSISTENTE IA (facoltativo)
+---------------------------
+  ssh root@<IP>
+  nano /etc/getvingo.env       -> togli il # davanti a ANTHROPIC_API_KEY
+                                 e incolla la chiave; salva (Ctrl+O, Invio,
+                                 Ctrl+X)
+  systemctl restart getvingo
+
+
+ARCHIVIO DDT IN CLOUD (consigliato prima di un cliente vero)
+------------------------------------------------------------
+Ogni versione di ogni DDT (emissione, firme, arrivo, modifiche,
+annullamento) viene salvata in PDF. Senza configurazione restano sul
+server (instance/archivio-ddt, incluse nel backup notturno); con uno
+storage S3 compatibile finiscono in cloud. Esempio Cloudflare R2:
+
+  1. dash.cloudflare.com -> R2 -> Crea bucket (es. getvingo-ddt,
+     giurisdizione UE)
+  2. Nel bucket -> Impostazioni -> regola di blocco (retention) di
+     10 anni: le copie non si possono cancellare né sovrascrivere
+  3. R2 -> Gestisci token API -> Crea token, permesso "Lettura e
+     scrittura oggetti" solo su quel bucket. Annota ID chiave di accesso,
+     chiave segreta e l'endpoint https://<account>.r2.cloudflarestorage.com
+  4. Sul server:
+       ssh root@<IP>
+       nano /etc/getvingo.env   -> togli i # e compila:
+         DOVIN_S3_BUCKET=getvingo-ddt
+         DOVIN_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+         DOVIN_S3_REGIONE=auto
+         DOVIN_S3_CHIAVE_ID=...
+         DOVIN_S3_SEGRETO=...
+       systemctl restart getvingo
+  5. Carica in cloud i DDT già emessi:
+       cd /opt/getvingo/app && set -a && . /etc/getvingo.env && \
+         sudo -E -u getvingo /opt/getvingo/venv/bin/flask --app getvingo archivia-ddt
+
+Se un invio non riesce (rete, credenziali) il DDT viene emesso
+comunque: ogni ora il server ritenta da solo con "flask archivia-ddt".
+Percorso dei file: org-<cliente>/<anno>/DDT_<numero>_<anno>/<data-ora>-rev<n>.pdf
+
+
+SE QUALCOSA NON VA
+------------------
+  ssh root@<IP>
+  journalctl -u getvingo -n 50      log del portale
+  journalctl -u caddy -n 50        log HTTPS (certificato, dominio)
+  systemctl restart getvingo caddy  riavvio
+
+Errore certificato HTTPS: quasi sempre il record DNS del punto 2 non è
+ancora attivo o punta a un IP sbagliato.
+
+
+SICUREZZA PRIMA DI UN CLIENTE VERO
+----------------------------------
+- Cambiare tutte le password demo (o ripartire con "flask init-db")
+- Togliere "demo" dal comando di pubblicazione
