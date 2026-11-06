@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, indietro %}
+{% block larghezza %}{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina"><div>{{ indietro(url_for('admin.indice')) }}<h1>Adesivi NFC</h1></div></div>
+<div class="contatori" style="grid-template-columns:1fr 1fr;margin:0 0 16px">
+  <a><strong>{{ abbinati }}</strong><span>In uso sulle auto</span></a>
+  <a><strong>{{ liberi|length }}</strong><span>Liberi, pronti da scrivere</span></a>
+</div>
+{% if link_locale %}
+<div class="avviso errore">{{ i('attenzione') }}<span>Stai aprendo il portale da questo computer ({{ base }}): questi link funzionano solo qui, non dal telefono.
+Apri questa pagina dall'indirizzo pubblico (es. quello del tunnel https://…trycloudflare.com) e copia i link da lì.</span></div>
+{% endif %}
+<div class="scheda" style="margin-bottom:16px">
+  <h3>Come si prepara un adesivo</h3>
+  <ol class="tenue piccolo" style="margin:8px 0 14px;padding-left:20px">
+    <li>Crea i codici qui sotto.</li>
+    <li>Con l'app gratuita “NFC Tools” scrivi su ogni adesivo il suo link (record di tipo URL).</li>
+    <li>Attacca l'adesivo sul lato interno del parabrezza, in un angolo.</li>
+    <li>Al primo tocco il portale chiede di abbinarlo al VIN.</li>
+  </ol>
+  <form method="post" class="azioni" style="align-items:flex-end">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label class="campo" style="margin:0;flex:1;min-width:140px"><span>Quanti codici</span><input type="number" name="quanti" value="10" min="1" max="500"></label>
+    <button class="btn primario">Crea codici</button>
+  </form>
+</div>
+<div class="scorre"><table class="tabella">
+  <thead><tr><th>Codice</th><th>Link da scrivere sull'adesivo</th></tr></thead>
+  <tbody>
+  {% for t in liberi %}
+    <tr><td class="num">{{ t.codice }}</td><td><code>{{ base }}/t/{{ t.codice }}</code></td></tr>
+  {% else %}
+    <tr><td colspan="2" class="tenue">Nessun codice libero.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

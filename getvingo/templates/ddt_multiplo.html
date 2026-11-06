@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, csrf_input, gps, campi_movimento, firma_pad, indietro %}
+{% block titolo %}DDT multiplo · Getvingo{% endblock %}
+{% block contenuto %}
+{{ indietro(url_for('main.archivio_ddt')) }}
+<div class="titolo-pagina"><div><div class="sopratitolo">Documento di trasporto</div><h1>DDT multiplo</h1></div></div>
+<p class="tenue" style="margin-top:-6px">Un solo DDT per più auto che partono insieme dallo stesso luogo verso la stessa destinazione, con lo stesso vettore (es. bisarca).</p>
+
+{% if not per_sede %}
+<div class="vuoto">{{ i('auto') }}Non ci sono sedi da cui puoi emettere un DDT.</div>
+{% else %}
+<form method="post" id="form-partenza" data-una-volta>
+  {{ csrf_input() }}{{ gps() }}
+
+  <h2>1 · Partenza da</h2>
+  <label class="campo"><span class="nascosto">Sede di partenza</span>
+    <select name="da_sede_id" id="da-sede">
+      {% for sede, auto in per_sede %}
+      <option value="{{ sede.id }}" {{ 'selected' if sede.id == sede_id }}>{{ sede.nome }} · {{ auto|length }} {{ 'auto disponibile' if auto|length == 1 else 'auto disponibili' }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <h2>2 · Auto da caricare <span class="conta-arancio" id="conta-scelte" hidden></span></h2>
+  <div class="lista" id="caricate"></div>
+  <p class="tenue piccolo" id="nessuna-caricata">Nessuna auto ancora: scegli come aggiungerle.</p>
+
+  {# Come aggiungere le auto: toccando gli adesivi NFC oppure cercando il telaio #}
+  {% if raccolta %}
+  <div class="raccolta-nfc attiva" id="raccolta">
+    <span class="tondo">{{ i('nfc') }}</span>
+    <div><b>Tocca l'adesivo sul parabrezza di ogni auto</b>
+      <span>Ogni auto toccata si aggiunge qui. <span id="nfc-stato"></span></span></div>
+    <button type="submit" class="btn piccolo" formaction="{{ url_for('main.ddt_multiplo_raccolta') }}" formnovalidate data-senza-firma name="azione" value="ferma">Fine</button>
+  </div>
+  {% else %}
+  <div class="metodi" id="metodi">
+    <button type="submit" class="metodo" formaction="{{ url_for('main.ddt_multiplo_raccolta') }}" formnovalidate data-senza-firma name="azione" value="avvia">
+      <span class="tondo">{{ i('nfc') }}</span><b>Tocca gli adesivi</b><span>Giri tra le auto e tocchi l'adesivo di ognuna</span>
+    </button>
+    <button type="button" class="metodo" id="metodo-telaio" aria-expanded="false">
+      <span class="tondo">{{ i('cerca') }}</span><b>Cerca per telaio</b><span>Scrivi le ultime cifre del telaio</span>
+    </button>
+  </div>
+  {% endif %}
+
+  <div id="ricerca-telaio" hidden>
+    <div class="ricerca" style="margin-top:12px">{{ i('cerca') }}<input id="cerca-telaio" placeholder="Ultime cifre del telaio" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Cerca per telaio"></div>
+    <p class="tenue piccolo" id="aiuto-ricerca">Scrivi almeno 3 caratteri del telaio.</p>
+    {% for sede, auto in per_sede %}
+    <div class="lista risultati" data-sede="{{ sede.id }}">
+      {% for v in auto %}
+      <label class="spunta scelta-auto" data-vin="{{ v.vin }}" style="margin:0" hidden>
+        <input type="checkbox" name="veicolo" value="{{ v.id }}" data-tag="{{ v.tag.codice if v.tag else '' }}" data-nome="{{ v.descrizione }}" {{ 'checked' if v.id in scelti }}>
+        <span style="min-width:0"><b>{{ v.descrizione }}{{ condizione(v) }}</b><br><span class="tenue piccolo">{{ v.vin|vin }}</span></span>
+      </label>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if raccolta %}<button type="button" class="btn-link piccolo" id="metodo-telaio" style="margin-top:10px">{{ i('cerca', 's') }} Cerca invece per telaio</button>{% endif %}
+  <p class="tenue piccolo" id="poche-auto" hidden></p>
+
+  <h2>3 · Trasporto</h2>
+  <div class="scheda">
+    {{ campi_movimento(valori, gruppi_sedi, causali, lavorazioni, vettori, nomi_utenti,
+                       etichetta_conducente="Responsabile dello spostamento") }}
+    <p class="tenue piccolo" style="margin:-6px 0 12px">Chi si incarica del trasporto di tutte le auto e firma il DDT, anche se a guidarle sono più persone.</p>
+    {{ firma_pad("Firma del responsabile dello spostamento", obbligatoria=True) }}
+  </div>
+  <div class="barra-azione">
+    <p class="riepilogo" data-riepilogo>scegli prima la destinazione</p>
+    <button type="submit" class="btn primario pieno" id="emetti-multiplo" disabled>{{ i('doc') }} Emetti DDT multiplo e parti</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
+{% block script %}
+<script>
+  (function () {
+    var MINIMO = {{ minimo }}, RACCOLTA = {{ 'true' if raccolta else 'false' }};
+    var scelta = document.getElementById('da-sede');
+    if (!scelta) return;
+    var conta = document.getElementById('conta-scelte'), bottone = document.getElementById('emetti-multiplo');
+    var caricate = document.getElementById('caricate'), nessuna = document.getElementById('nessuna-caricata');
+    var pannello = document.getElementById('ricerca-telaio'), campo = document.getElementById('cerca-telaio');
+    var aiuto = document.getElementById('aiuto-ricerca'), poche = document.getElementById('poche-auto');
+    var caselle = [].slice.call(document.querySelectorAll('input[name="veicolo"]'));
+    var NOMI_SEDI = {};
+    [].forEach.call(scelta.options, function (o) { NOMI_SEDI[o.value] = o.text.split(' · ')[0]; });
+
+    function nellaSede(c) { return c.closest('.risultati').dataset.sede === scelta.value; }
+    function scelte() { return caselle.filter(function (c) { return c.checked && nellaSede(c); }); }
+    // come normalizza() lato server: maiuscolo, senza spazi, O->0, I->1, Q->0
+    function norm(t) { return t.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/O|Q/g, '0').replace(/I/g, '1'); }
+
+    function salva() {  // la bozza resta sul server: i tocchi sugli adesivi non la perdono
+      fetch('{{ url_for("main.api_ddt_multiplo") }}', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': window.DOVIN_CSRF || '' },
+        body: JSON.stringify({ sede: parseInt(scelta.value, 10), auto: scelte().map(function (c) { return c.value; }) })
+      }).catch(function () {});
+    }
+
+    function disegnaCaricate() {
+      caricate.innerHTML = '';
+      scelte().forEach(function (c) {
+        var riga = document.createElement('div'); riga.className = 'voce caricata';
+        var testo = document.createElement('div'); testo.className = 'corpo';
+        var nome = document.createElement('b'); nome.textContent = c.dataset.nome;
+        var vin = c.closest('label').querySelector('.vin').cloneNode(true);
+        var sotto = document.createElement('div'); sotto.className = 'tenue piccolo'; sotto.appendChild(vin);
+        testo.appendChild(nome); testo.appendChild(sotto);
+        var togli = document.createElement('button'); togli.type = 'button'; togli.className = 'btn-link piccolo'; togli.textContent = 'Rimuovi';
+        togli.addEventListener('click', function () { c.checked = false; aggiorna(); salva(); });
+        riga.appendChild(testo); riga.appendChild(togli);
+        caricate.appendChild(riga);
+      });
+    }
+
+    function filtra() {
+      var q = norm(campo.value), trovate = 0;
+      caselle.forEach(function (c) {
+        var mostra = nellaSede(c) && !c.checked && q.length >= 3 && c.closest('label').dataset.vin.indexOf(q) !== -1;
+        c.closest('label').hidden = !mostra;
+        if (mostra) trovate++;
+      });
+      aiuto.textContent = q.length < 3 ? 'Scrivi almeno 3 caratteri del telaio.'
+        : trovate ? (trovate === 1 ? '1 auto trovata: toccala per caricarla.' : trovate + ' auto trovate: tocca quelle da caricare.')
+                  : 'Nessuna auto disponibile con questo telaio in ' + NOMI_SEDI[scelta.value] + '.';
+    }
+
+    function aggiorna() {
+      caselle.forEach(function (c) { c.disabled = !nellaSede(c); });  // si inviano solo le auto della sede scelta
+      var n = scelte().length;
+      disegnaCaricate();
+      nessuna.hidden = n > 0;
+      conta.hidden = !n; conta.textContent = n;
+      bottone.disabled = n < MINIMO;
+      bottone.lastChild.textContent = n >= MINIMO ? ' Emetti DDT per ' + n + ' auto e parti'
+                                                  : ' Carica almeno ' + MINIMO + ' auto';
+      var disponibili = caselle.filter(nellaSede).length;
+      poche.hidden = disponibili >= MINIMO;
+      poche.textContent = disponibili ? 'In ' + NOMI_SEDI[scelta.value] + ' c\u2019è una sola auto che può partire: per un DDT multiplo ne servono almeno ' + MINIMO + '.'
+                                      : 'In ' + NOMI_SEDI[scelta.value] + ' nessuna auto può partire adesso.';
+      filtra();
+    }
+
+    function apriRicerca() {
+      pannello.hidden = false;
+      var m = document.getElementById('metodo-telaio'); if (m) m.setAttribute('aria-expanded', 'true');
+      try { sessionStorage.setItem('dovin-multiplo-telaio', '1'); } catch (e) {}
+      campo.focus();
+    }
+    var bottoneTelaio = document.getElementById('metodo-telaio');
+    if (bottoneTelaio) bottoneTelaio.addEventListener('click', apriRicerca);
+    try { if (!RACCOLTA && sessionStorage.getItem('dovin-multiplo-telaio')) pannello.hidden = false; } catch (e) {}
+
+    campo.addEventListener('input', filtra);
+    caselle.forEach(function (c) {
+      c.addEventListener('change', function () { aggiorna(); salva(); campo.value = ''; filtra(); campo.focus(); });
+    });
+    scelta.addEventListener('change', function () {
+      caselle.forEach(function (c) { c.checked = false; });
+      aggiorna(); salva();
+    });
+    aggiorna();
+
+    // Android (Chrome): l'adesivo si legge restando su questa pagina. Su iPhone il tocco apre
+    // il link dell'adesivo e il portale riporta qui con l'auto aggiunta.
+    var stato = document.getElementById('nfc-stato');
+    if (RACCOLTA && 'NDEFReader' in window) {
+      var avvia = function () {
+        var lettore = new NDEFReader();
+        lettore.scan().then(function () {
+          stato.textContent = 'Lettore NFC attivo.';
+          lettore.onreading = function (e) {
+            var codice = null;
+            e.message.records.forEach(function (r) {
+              if (r.recordType !== 'url' && r.recordType !== 'absolute-url') return;
+              var m = new TextDecoder().decode(r.data).match(/\/t\/([A-Za-z0-9]+)/);
+              if (m) codice = m[1];
+            });
+            if (!codice) { stato.textContent = 'Adesivo non riconosciuto.'; return; }
+            if (navigator.vibrate) navigator.vibrate(60);
+            stato.textContent = 'Rilevo la posizione…';
+            // ogni tocco aggiorna la posizione dell'auto: senza GPS non si aggiunge
+            navigator.geolocation.getCurrentPosition(function (p) {
+              fetch('{{ url_for("main.api_ddt_multiplo") }}', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': window.DOVIN_CSRF || '' },
+                body: JSON.stringify({ codice: codice, lat: p.coords.latitude, lon: p.coords.longitude })
+              }).then(function () { location.reload(); });
+            }, function () {
+              stato.textContent = 'Senza la posizione non si può aggiungere l\u2019auto: attiva la localizzazione e ritocca l\u2019adesivo.';
+            }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+          };
+        }).catch(function () {
+          stato.innerHTML = '';
+          var b = document.createElement('button');
+          b.type = 'button'; b.className = 'btn-link'; b.textContent = 'Attiva il lettore NFC';
+          b.addEventListener('click', function () { b.remove(); avvia(); });
+          stato.appendChild(b);
+        });
+      };
+      avvia();
+    }
+  })();
+</script>
+{% endblock %}

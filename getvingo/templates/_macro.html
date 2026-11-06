@@ -1,0 +1,257 @@
+{% macro i(nome, classe='') %}<svg class="icona {{ classe }}" aria-hidden="true"><use href="#i-{{ nome }}"/></svg>{% endmacro %}
+
+{% set ICONE_FASE = {'in_viaggio': 'camion', 'lavorazione': 'chiave', 'da_ritirare': 'ritiro', 'preparazione': 'brilla',
+                     'pronta': 'bandiera', 'in_sede': 'sede', 'consegnato': 'archivio'} %}
+
+{% macro badge_veicolo(v) %}{% set k, testo = v.stato_per(g.utente) %}<span class="badge {{ k }} con-icona">{{ i(ICONE_FASE.get(k, 'sede'), 's') }}{{ testo }}</span>{% endmacro %}
+
+{% macro icona_fase(v) %}{% set k, testo = v.stato_per(g.utente) %}<span class="tondo {{ k }}" title="{{ testo }}">{{ i(ICONE_FASE.get(k, 'sede')) }}</span>{% endmacro %}
+
+{% macro durata(td) %}{% if td is none %}in corso{% else %}{% set m = (td.total_seconds() // 60)|int %}{% if m < 60 %}{{ m }} min{% elif m < 1440 %}{{ m // 60 }} h{% if m % 60 %} {{ m % 60 }} min{% endif %}{% else %}{{ m // 1440 }} g{% if (m % 1440) // 60 %} {{ (m % 1440) // 60 }} h{% endif %}{% endif %}{% endif %}{% endmacro %}
+
+{# Dettaglio dei tempi di ogni fase del ciclo (lavorazione esterna -> pronta) #}
+{% macro tempi_fasi(prep) %}
+<ol class="tempi">
+  {% for nome, inizio, fine, td in prep.tempi %}
+  <li class="{{ 'in-corso' if fine is none }}"><span>{{ nome }}</span><b>{{ durata(td) }}</b></li>
+  {% endfor %}
+  {% if prep.durata_totale %}<li class="totale"><span>Totale ciclo</span><b>{{ durata(prep.durata_totale) }}</b></li>{% endif %}
+</ol>
+{% endmacro %}
+
+{% macro badge_mov(m) %}<span class="badge {{ m.stato }}">{{ m.STATI[m.stato] }}</span>{% endmacro %}
+
+{% macro csrf_input() %}<input type="hidden" name="csrf" value="{{ csrf_token() }}">{% endmacro %}
+
+{% macro gps() %}<input type="hidden" name="lat"><input type="hidden" name="lon">{% endmacro %}
+
+{# Campi del movimento: usati in partenza e in modifica DDT #}
+{% macro campi_movimento(valori, gruppi_sedi, causali, lavorazioni, vettori, nomi_utenti, etichetta_conducente='Chi sposta il mezzo') %}
+<label class="campo"><span>Destinazione</span>
+  <select name="a_sede_id" id="destinazione" required>
+    <option value="">Scegli dove va l'auto…</option>
+    {% for gruppo, sedi in gruppi_sedi %}
+      <optgroup label="{{ gruppo }}">
+        {% for s in sedi %}<option value="{{ s.id }}" data-tipo="{{ s.tipo }}" {{ 'selected' if valori.a_sede_id == s.id }}>{{ s.nome }}</option>{% endfor %}
+      </optgroup>
+    {% endfor %}
+  </select>
+</label>
+<div class="griglia-2">
+  <label class="campo"><span>Lavorazione da fare</span>
+    <select name="lavorazione" id="lavorazione" required>
+      {% for l in lavorazioni %}<option {{ 'selected' if valori.lavorazione == l }}>{{ l }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="campo"><span>Causale DDT</span>
+    <select name="causale" id="causale" required>
+      {% for c in causali %}<option {{ 'selected' if valori.causale == c }}>{{ c }}</option>{% endfor %}
+    </select>
+    <small>Suggerita in base alla destinazione</small>
+  </label>
+</div>
+<label class="campo"><span>Dettagli lavorazione <span class="tenue" data-se-nessuna>(non serve per il solo trasferimento)</span></span>
+  <input name="lavorazione_note" id="lavorazione-note" maxlength="300" value="{{ valori.lavorazione_note or '' }}" placeholder="Es. riparare paraurti posteriore, lucidatura">
+</label>
+<label class="campo"><span>Modalità di trasporto</span>
+  <select name="mezzo" required>
+    <option value="">Come viaggia l'auto…</option>
+    {% for m in MEZZI_TRASPORTO %}<option {{ 'selected' if valori.mezzo == m }}>{{ m }}</option>{% endfor %}
+  </select>
+</label>
+<div class="griglia-2">
+  <label class="campo"><span>{{ etichetta_conducente }}</span>
+    <input name="conducente" list="nomi-utenti" maxlength="120" value="{{ valori.conducente or '' }}" placeholder="Nome e cognome" autocomplete="off" required>
+    <datalist id="nomi-utenti">{% for n in nomi_utenti %}<option value="{{ n }}">{% endfor %}</datalist>
+  </label>
+  <label class="campo"><span>Vettore</span>
+    <select name="vettore_id" required>
+      {% for vt in vettori %}<option value="{{ vt.id }}" {{ 'selected' if valori.vettore_id == vt.id }}>{{ vt.nome }}</option>{% endfor %}
+    </select>
+  </label>
+</div>
+{% endmacro %}
+
+{# Riquadro firma: obbligatoria=True blocca l'invio finché non si firma #}
+{% macro firma_pad(etichetta, nome='firma', obbligatoria=False, attuale=None) %}
+<div class="campo">
+  <span>{{ etichetta }}</span>
+  {% if attuale %}<div class="firma-attuale"><img src="{{ attuale }}" alt="Firma attuale"><small>Firma attuale · disegnane una nuova per sostituirla</small></div>{% endif %}
+  <div class="firma-pad" {{ 'data-obbligatoria' if obbligatoria }}>
+    <canvas aria-label="Riquadro firma"></canvas>
+    <span class="firma-guida">Firma qui col dito</span>
+    <button type="button" class="btn-link firma-cancella" data-cancella>Cancella</button>
+    <input type="hidden" name="{{ nome }}">
+  </div>
+  {% if obbligatoria %}<small class="firma-errore">Serve la firma per continuare.</small>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro immagine_firma(dato, etichetta, nota='') %}
+<div class="firma-box">
+  {% if dato %}<img src="{{ dato }}" alt="Firma {{ etichetta }}">{% else %}<span class="tenue piccolo">—</span>{% endif %}
+  <div class="etichetta" style="margin:6px 0 0">{{ etichetta }}</div>
+  {% if nota %}<div class="tenue piccolo">{{ nota }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro badge_ddt(d) %}{% set k, testo = d.stato %}<span class="badge {{ k }}">{{ testo }}</span>{% endmacro %}
+
+{% macro badge_esteso(v) %}{{ badge_veicolo(v) }}{% endmacro %}
+
+{% macro giorni(n) %}{% if n is not none %}<span class="giorni {{ 'alto' if n >= 7 else ('medio' if n >= 3 else '') }}" title="Giorni in lavorazione"><b>{{ n }}</b> {{ 'giorno' if n == 1 else 'giorni' }}</span>{% endif %}{% endmacro %}
+
+{# Menu di filtro: elenca solo i valori presenti; sparisce solo se non ce n'è nessuno.
+   opzioni: lista di valori o di coppie (valore, etichetta) #}
+{% macro filtro_select(nome, etichetta, opzioni, attuale, tutte='Tutti', auto=True) %}
+{% if opzioni|length > 0 or attuale %}
+<label class="campo"><span>{{ etichetta }}</span>
+  <select name="{{ nome }}" {{ 'onchange=this.form.submit()' if auto }}>
+    <option value="">{{ tutte }}</option>
+    {% for o in opzioni %}{% set val = o[0] if o is not string else o %}{% set lab = o[1] if o is not string else o %}
+    <option value="{{ val }}" {{ 'selected' if attuale|string|lower == val|string|lower }}>{{ lab }}</option>
+    {% endfor %}
+  </select>
+</label>
+{% endif %}
+{% endmacro %}
+
+{# Tempi semplificati: giorni di lavorazione esterna e interna, e quando è stata completata #}
+{% macro riepilogo_lavorazione(prep) %}{% set r = prep.riepilogo %}
+<div class="riepilogo-giorni">
+  {% if r.esterni is not none %}<div><span class="et">{{ i('chiave', 's') }} Lavorazione esterna</span><b>{{ giorni_testo(r.esterni) }}</b><small>{{ r.fornitore }}</small></div>{% endif %}
+  <div><span class="et">{{ i('brilla', 's') }} Preparazione interna</span><b>{{ giorni_testo(r.interni) }}{% if not r.completata_at %} (in corso){% endif %}</b></div>
+  {% if r.completata_at %}<div><span class="et">{{ i('bandiera', 's') }} Completata il</span><b>{{ r.completata_at|data('%d/%m/%Y') }}</b></div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro giorni_testo(n) %}{% if n == 0 %}in giornata{% elif n == 1 %}1 giorno{% else %}{{ n }} giorni{% endif %}{% endmacro %}
+
+{# Pillole di filtro senza scorrimento: quelle vuote non compaiono, "a_destra" vanno in fondo a destra.
+   Una voce può avere un 6° elemento: l'etichetta corta usata sul telefono. una_riga: sul telefono stanno
+   tutte su una riga, a larghezze uguali (senza icone, con l'etichetta corta) #}
+{% macro pillole(voci, attiva, a_destra=(), una_riga=False) %}
+<nav class="filtri {{ 'una-riga' if una_riga }}">
+  {% for v in voci if v[3] or v[0] == attiva or v[0] == 'tutti' %}{% set chiave, etichetta, url, n, icona = v[0], v[1], v[2], v[3], v[4] %}
+  <a href="{{ url }}" class="{{ 'attivo' if chiave == attiva }} {{ 'a-destra' if chiave in a_destra }}">{% if icona %}{{ i(icona) }} {% endif %}{% if v|length > 5 %}<span class="et-lunga">{{ etichetta }}</span><span class="et-corta">{{ v[5] }}</span>{% else %}{{ etichetta }}{% endif %}{% if n is not none %} <span class="n">{{ n }}</span>{% endif %}</a>
+  {% endfor %}
+</nav>
+{% endmacro %}
+
+{# Rientro, preparazione, lavaggio…: data in cui è stato fatto e giorni passati #}
+{% macro tappe_preparazione(prep) %}
+<ul class="tappe">
+  {% for t in prep.tappe %}
+  <li><b>{{ t.nome }}</b><span>{{ t.data|data('%d/%m/%Y') }}</span><small>{{ 'oggi' if t.giorni_fa == 0 else ('ieri' if t.giorni_fa == 1 else t.giorni_fa ~ ' giorni fa') }}</small></li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
+{# Correzione dell'admin, nel punto esatto in cui sta l'elemento da correggere #}
+{% macro annulla(azione, etichetta, torna) %}{% if azione %}
+<form method="post" action="{{ url_for('main.ripristina_azione', azione_id=azione.id) }}" class="annulla" data-una-volta
+      onsubmit="return confirm('{{ etichetta }}? ({{ azione.nome }} di {{ azione.utente.nome }}, {{ azione.at|data }})')">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="torna" value="{{ torna }}">
+  <button class="btn-link">{{ i('ritiro', 's') }} {{ etichetta }}</button>
+</form>
+{% endif %}{% endmacro %}
+
+{% macro fase_css(v) %}fase {{ v.stato_per(g.utente)[0] }}{% endmacro %}
+
+{# Legenda dei colori: solo gli stati presenti nell'elenco #}
+{% macro legenda(veicoli) %}{% set presenti = [] %}{% for v in veicoli %}{% set k = v.stato_per(g.utente) %}{% if k not in presenti %}{% set _ = presenti.append(k) %}{% endif %}{% endfor %}
+{% if presenti|length > 1 %}<div class="legenda">{% for k, nome in presenti|sort(attribute='1') %}<span class="{{ k }}"><i></i>{{ nome }}</span>{% endfor %}</div>{% endif %}
+{% endmacro %}
+
+{% macro targa(v) %}{% if v.targa %}<span class="targa">{{ v.targa }}</span>{% endif %}{% endmacro %}
+
+{# Ultimo aggiornamento della posizione: niente coordinate, solo chi, quando e come #}
+{% macro posizione_info(v) %}{% set e = v.ultima_posizione %}
+{% if e %}<p class="posizione-info">{{ i('pin', 's') }} Posizione aggiornata {{ e.at|data('%d/%m/%Y alle %H:%M') }} da <b style="color:var(--testo)">{{ e.utente.nome if e.utente else '—' }}</b>, {{ e.come }}.</p>{% endif %}
+{% endmacro %}
+
+{# Logo della marca (se presente in static/marchi), altrimenti le iniziali della marca #}
+{% macro marchio(v) %}{% set logo = v.marca|marchio %}{% if logo %}<span class="logo-marca" title="{{ v.marca }}"><img src="{{ logo }}" alt="{{ v.marca }}" loading="lazy"></span>{% else %}<span class="logo-marca sigla" title="{{ v.marca or 'Marca non indicata' }}">{{ (v.marca or '?')|iniziali }}</span>{% endif %}{% endmacro %}
+
+{# Elenco / Calendario, con il conteggio a sinistra (e "azzera filtri" se serve) #}
+{% macro interruttore_modo(modo, url_elenco, url_calendario, conteggio, url_azzera=none) %}
+<div class="barra-modo">
+  <span class="tenue piccolo">{{ conteggio }}{% if url_azzera %} · <a href="{{ url_azzera }}">azzera filtri</a>{% endif %}</span>
+  <div class="interruttore" role="group" aria-label="Come vedere">
+    <a href="{{ url_elenco }}" class="{{ 'attivo' if modo == 'elenco' }}">{{ i('doc', 's') }} Elenco</a>
+    <a href="{{ url_calendario }}" class="{{ 'attivo' if modo == 'calendario' }}">{{ i('orologio', 's') }} Calendario</a>
+  </div>
+</div>
+{% endmacro %}
+
+{# Calendario del mese: eventi {at, tipo, v, nota, ritardo} in ogni giorno, in ordine di orario #}
+{% macro calendario_mese(c, url_prec, url_succ, tipi) %}
+<div class="calendario-testa">
+  <a class="btn piccolo" href="{{ url_prec }}" aria-label="Mese precedente">‹</a>
+  <h3>{{ c.titolo }} <span class="tenue piccolo" style="font-weight:500">· {{ c.totale }} {{ 'evento' if c.totale == 1 else 'eventi' }}</span></h3>
+  <a class="btn piccolo" href="{{ url_succ }}" aria-label="Mese successivo">›</a>
+</div>
+<div class="calendario">
+  {% for g in ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'] %}<div class="cal-intestazione">{{ g }}</div>{% endfor %}
+  {% for settimana in c.settimane %}{% for d in settimana %}
+  <div class="cal-giorno {{ 'vuoto-giorno' if not d.giorno }} {{ 'oggi' if d.oggi }} {{ 'con-auto' if d.eventi }}">
+    {% if d.giorno %}<span class="cal-numero" data-mese="{{ c.titolo }}">{{ d.giorno }}</span>
+    {% for e in d.eventi %}<a class="cal-auto ev {{ e.tipo }} {{ 'ritardo' if e.ritardo }}" href="{{ url_for('main.veicolo', veicolo_id=e.v.id) }}"
+       title="{{ tipi[e.tipo] }} · {{ e.v.descrizione }} · {{ e.v.vin }}{{ ' · ' ~ e.nota if e.nota }}">
+      <b>{{ e.at|data('%H:%M') }}</b> {{ e.v.modello or e.v.descrizione }} <span class="vin">…{{ e.v.vin[-8:] }}</span></a>{% endfor %}{% endif %}
+  </div>
+  {% endfor %}{% endfor %}
+</div>
+{% endmacro %}
+
+{# Freccia "Indietro": torna alla pagina precedente del portale; se si arriva da fuori, va a "dove" #}
+{% macro indietro(dove, etichetta='Indietro') %}<a class="torna-indietro" href="{{ dove }}" data-indietro>{{ i('indietro', 's') }} {{ etichetta }}</a>{% endmacro %}
+
+{# Filtro Tutti / Vetture / Commerciali (interruttore); "altri" = parametri da mantenere nei link #}
+{% macro filtro_tipologia(attuale, endpoint) %}
+<div class="interruttore filtro-tipologia" role="group" aria-label="Tipo di veicolo">
+  <a href="{{ url_for(endpoint, **kwargs) }}" class="{{ 'attivo' if not attuale }}">Tutti</a>
+  <a href="{{ url_for(endpoint, tipologia='vettura', **kwargs) }}" class="{{ 'attivo' if attuale == 'vettura' }}">{{ i('auto', 's') }} Vetture</a>
+  <a href="{{ url_for(endpoint, tipologia='commerciale', **kwargs) }}" class="{{ 'attivo' if attuale == 'commerciale' }}">{{ i('camion', 's') }} Commerciali</a>
+</div>
+{% endmacro %}
+
+{# Stato dell'auto in Stock: Nuovo / Usato (al posto di "In sede", che in stock è sempre vero) #}
+{% macro badge_condizione(v) %}{% if v.condizione == 'nuovo' %}<span class="badge nuovo con-icona">{{ i('brilla', 's') }}Nuovo</span>{% elif v.condizione == 'usato' %}<span class="badge usato con-icona">{{ i('orologio', 's') }}Usato</span>{% else %}<span class="badge da-indicare">Nuovo o usato?</span>{% endif %}{% endmacro %}
+
+
+{# DDT: prima si apre l'anteprima (da lì si scarica); "Condividi" manda il PDF dal telefono #}
+{% macro azioni_ddt(d, piccoli=False) %}
+<a class="btn {{ 'piccolo' if piccoli }}" href="{{ url_for('main.ddt_anteprima', ddt_id=d.id) }}">{{ i('doc', 's') }} Anteprima</a>
+<button type="button" class="btn {{ 'piccolo' if piccoli }}" data-condividi-pdf="{{ url_for('main.ddt_pdf', ddt_id=d.id) }}"
+        data-nome="DDT_{{ d.numero }}_{{ d.anno }}.pdf" data-titolo="DDT n. {{ d.sigla }} · {{ d.movimento.veicolo.descrizione }}">{{ i('invia', 's') }} Condividi</button>
+{% endmacro %}
+
+{# Scelta dell'orario a slot di 30 minuti: prima il giorno (con quanti slot liberi), poi l'orario.
+   Gli slot già presi si vedono con il nome dell'auto e non si scelgono. per_sede = nome del menu della sede
+   da cui dipende l'occupazione (consegne: uno slot per sede). #}
+{% macro scegli_slot(nome, giorni, attuale=none, per_sede=none, vuoto='Nessun orario scelto') %}
+<div class="scegli-slot" data-scegli-slot {% if per_sede %}data-per-sede="{{ per_sede }}"{% endif %} data-vuoto="{{ vuoto }}">
+  <input type="hidden" name="{{ nome }}" value="{{ attuale.strftime('%Y-%m-%dT%H:%M') if attuale else '' }}">
+  <div class="slot-giorni">
+    {% for g in giorni %}
+    <button type="button" class="slot-giorno" data-giorno="{{ loop.index0 }}" aria-label="{{ g.lungo }}">
+      <small>{{ g.breve }}</small><b>{{ g.data.day }}</b><small>{{ g.mese }}</small><span class="slot-liberi"></span></button>
+    {% endfor %}
+  </div>
+  {% for g in giorni %}
+  <div class="slot-ore" data-ore="{{ loop.index0 }}" hidden>
+    <p class="slot-titolo">{{ g.lungo|capitalize }}</p>
+    {% for fascia, voci in [('Mattina', g.slot|selectattr('at.hour', 'lt', 13)|list), ('Pomeriggio', g.slot|rejectattr('at.hour', 'lt', 13)|list)] if voci %}
+    <div class="slot-fascia"><span class="tenue piccolo">{{ fascia }}</span>
+      <div class="slot-griglia">
+      {% for s in voci %}<button type="button" class="slot-ora" data-at="{{ s.at.strftime('%Y-%m-%dT%H:%M') }}" data-occupato="{{ s.occupato|tojson|forceescape }}">{{ s.at.strftime('%H:%M') }}<small></small></button>{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <p class="slot-scelto">{{ i('orologio', 's') }} <span data-slot-testo>{{ attuale|slot if attuale else vuoto }}</span>
+    <button type="button" class="btn-link" data-slot-togli {{ 'hidden' if not attuale }}>Togli</button></p>
+</div>
+{% endmacro %}

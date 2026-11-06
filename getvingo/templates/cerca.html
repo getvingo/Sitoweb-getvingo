@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, badge_veicolo, icona_fase, filtro_select, fase_css, legenda, targa, indietro %}
+{% block titolo %}Cerca · Getvingo{% endblock %}
+{% block contenuto %}
+{{ indietro(url_for('main.home')) }}
+<div class="titolo-pagina"><div><div class="sopratitolo">Tutte le auto, ovunque si trovino</div><h1>Cerca</h1></div>
+  <span class="tenue piccolo" style="margin-top:8px">{{ risultati|length }} trovate</span></div>
+<form>
+  <div class="ricerca">{{ i('cerca') }}<input name="q" value="{{ f.q }}" placeholder="Ultime cifre del VIN, modello, colore" aria-label="Cerca veicolo"></div>
+  <div class="barra-filtri" style="margin-top:10px">
+    {{ filtro_select('tipologia', 'Tipologia', opzioni.tipologia, f.tipologia, 'Tutte') }}
+    {{ filtro_select('marca', 'Marca', opzioni.marca, f.marca, 'Tutte') }}
+    {{ filtro_select('modello', 'Modello', opzioni.modello, f.modello) }}
+    {{ filtro_select('colore', 'Colore', opzioni.colore, f.colore) }}
+    {{ filtro_select('fase', 'Stato', opzioni.fase, f.fase) }}
+  </div>
+  {% if filtri_attivi %}<a class="chip" href="{{ url_for('main.cerca', q=f.q) }}">✕ Azzera filtri</a>{% endif %}
+</form>
+{{ legenda(risultati) }}
+<div class="lista" style="margin-top:10px">
+  {% for v in risultati %}
+    <a class="voce {{ fase_css(v) }}" href="{{ url_for('main.veicolo', veicolo_id=v.id) }}">
+      {{ icona_fase(v) }}
+      <div class="corpo">
+        <h3>{{ v.descrizione }}{{ condizione(v) }}{{ targa(v) }}{% if v.tipologia == 'commerciale' %}<span class="tipologia">Comm.</span>{% endif %}</h3>
+        <div class="tenue piccolo">{{ v.vin|vin }}</div>
+        {% if v.sede and v.stato != 'in_viaggio' %}<div class="tratta">{{ i('pin', 's') }} {{ v.sede.nome }}</div>{% endif %}
+      </div>
+      <div class="lato">{{ badge_veicolo(v) }}</div>
+    </a>
+  {% else %}
+    <div class="vuoto">{{ i('auto') }}Nessun veicolo trovato.</div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, csrf_input, firma_pad, indietro %}
+{% block titolo %}Profilo di guida · Getvingo{% endblock %}
+{% block contenuto %}
+{{ indietro(poi or url_for('main.home')) }}
+<div class="titolo-pagina"><div><div class="sopratitolo">{{ g.utente.nome }}</div><h1>Profilo di guida</h1></div></div>
+<p class="tenue">Si imposta una volta sola. Quando tocchi l'adesivo di un'auto e premi “Inizia spostamento” scegli solo la destinazione: vettore, modalità di trasporto, conducente (tu) e firma li prende da qui.</p>
+<form method="post" data-una-volta>
+  {{ csrf_input() }}<input type="hidden" name="poi" value="{{ poi }}">
+  <div class="scheda">
+    <label class="campo"><span>Vettore</span>
+      <select name="vettore_id" required>
+        <option value="">Per chi trasporti…</option>
+        {% for vt in vettori %}<option value="{{ vt.id }}" {{ 'selected' if vettore_id == vt.id }}>{{ vt.nome }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="campo"><span>Modalità di trasporto</span>
+      <select name="mezzo" required>
+        {% for m in mezzi %}<option {{ 'selected' if mezzo == m }}>{{ m }}</option>{% endfor %}
+      </select>
+    </label>
+    {{ firma_pad("La tua firma (conducente)", obbligatoria=not g.utente.firma, attuale=g.utente.firma) }}
+    <small class="tenue">Viene apposta su ogni DDT che emetti col tocco; sul PDF resta scritto che è la firma salvata.</small>
+  </div>
+  <div class="barra-azione"><button class="btn primario pieno">{{ i('check') }} Salva</button></div>
+</form>
+{% endblock %}

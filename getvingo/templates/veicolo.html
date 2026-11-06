@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, badge_veicolo, csrf_input, gps, campi_movimento, firma_pad, giorni, riepilogo_lavorazione, tappe_preparazione, annulla, targa, posizione_info, indietro, scegli_slot %}
+{% from "_danno.html" import scheda_danno %}
+{% from "_auto.html" import carta_auto, info_auto, ddt_mini, in_viaggio_da, avanzamento_prep, avanzamento_lavoro, sollecito_lavoro, cambia_stima, rientro_lavoro %}
+{% block head %}<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">{% endblock %}
+{% block titolo %}{{ v.descrizione }} · Getvingo{% endblock %}
+{% block larghezza %}largo{% endblock %}
+{% block contenuto %}
+{{ indietro(url_for('main.piazzale')) }}
+<div class="scheda-auto-testa">
+  {{ carta_auto(v, targa_da_aggiungere=g.utente.interno and not v.targa) }}
+  {{ info_auto(v) }}
+</div>
+<div class="azioni" style="margin:0 0 16px;align-items:center">
+  {% if g.utente.interno and not v.condizione %}
+  <form method="post" action="{{ url_for('main.modifica_dati_auto', veicolo_id=v.id) }}" class="azioni condizione-mancante" data-una-volta>
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <span class="piccolo" style="font-weight:650">Nuova o usata? <span class="tenue" style="font-weight:500">(si indica una volta sola)</span></span>
+    <button class="btn piccolo" name="condizione" value="nuovo">Nuova</button>
+    <button class="btn piccolo" name="condizione" value="usato">Usata</button>
+  </form>
+  {% endif %}
+  {% if g.utente.interno and simili %}<a class="chip" href="{{ url_for('main.cerca', marca=v.marca, modello=v.modello) }}">{{ i('simili') }} {{ simili }} {{ 'simile' if simili == 1 else 'simili' }}</a>{% endif %}
+</div>
+
+{% set puo_preparare = g.utente.interno and puo_emettere and v.fase == 'in_sede' and v.sede and v.sede.tipo == 'propria' %}
+<div class="scheda-colonna">
+<div class="col-principale">
+{% for d in v.danni_aperti %}{{ scheda_danno(d, url_for('main.veicolo', veicolo_id=v.id), mostra_auto=False) }}<div style="height:12px"></div>{% endfor %}
+
+{# ---- Presso un fornitore ---- #}
+{% if v.stato == 'in_sede' and v.sede and v.sede.esterna and ultimo %}
+<a class="voce" href="{{ url_for('main.ddt_dettaglio', ddt_id=ultimo.ddt.id) }}" style="margin-bottom:12px">
+  <span class="tondo {{ 'da_ritirare' if ultimo.lavorazione_completata_at else 'lavorazione' }}">{{ i('chiave') }}</span>
+  <div class="corpo">
+    <div class="etichetta">{{ 'Lavorazione finita' if ultimo.lavorazione_completata_at else 'In lavorazione' }} presso {{ v.sede.nome }}</div>
+    <h3>{{ ultimo.lavorazione }}</h3>
+    {% if ultimo.lavorazione_note %}<div class="lavoro-dettaglio">{{ ultimo.lavorazione_note }}</div>{% endif %}
+    {% if ultimo.lavorazione_completata_at %}
+      <div class="tratta" style="color:var(--ok);font-weight:650">{{ i('check', 's') }} Completata {{ ultimo.lavorazione_completata_at|da_quanto }}{% if ultimo.lavorazione_note_fine %} · {{ ultimo.lavorazione_note_fine }}{% endif %}</div>
+    {% else %}
+      <div class="tratta">arrivata il {{ ultimo.arrivo_at|data('%d/%m/%Y') }} · la fine lavorazione la segna {{ v.sede.nome }}</div>
+    {% endif %}
+  </div>
+  {{ giorni(ultimo.giorni_lavorazione) }}
+</a>
+{% if ultimo.con_lavorazione %}
+<section class="scheda tocco-prep tocco-lavoro" style="margin:-4px 0 12px">
+  {{ avanzamento_lavoro(ultimo, anello=True) }}
+  {{ rientro_lavoro(v, ultimo, pulsante=False) }}
+  {{ sollecito_lavoro(ultimo, url_for('main.veicolo', veicolo_id=v.id)) }}
+  {% if not ultimo.lavorazione_completata_at %}{{ cambia_stima(ultimo, url_for('main.veicolo', veicolo_id=v.id)) }}{% endif %}
+</section>
+{% endif %}
+{% if ultimo.lavorazione_completata_at %}{{ annulla(annullabile(v.id, 'lavorazione_completata', ultimo.ddt.id), 'Annulla completamento', url_for('main.veicolo', veicolo_id=v.id)) }}{% endif %}
+{% endif %}
+
+{% if puo_lavorazione %}
+<form method="post" action="{{ url_for('main.ddt_lavorazione_completata', ddt_id=ultimo.ddt.id) }}" data-una-volta class="scheda" style="margin-bottom:12px">
+  {{ csrf_input() }}<input type="hidden" name="movimento_id" value="{{ ultimo.id }}">
+  <label class="campo"><span>Note di fine lavorazione <span class="tenue">(facoltative)</span></span><input name="note" maxlength="300"></label>
+  <label class="spunta"><input type="checkbox" name="rientro" value="1" checked>
+    <span>Prepara subito il DDT di rientro verso <b>{{ ultimo.da_sede.nome if ultimo.da_sede else 'la concessionaria' }}</b>: chi viene a ritirare dovrà solo toccare l'adesivo, firmare e partire.</span></label>
+  <button class="btn primario pieno">{{ i('check') }} Lavorazione completata</button>
+</form>
+{% endif %}
+
+{# ---- Preparazione per la consegna ---- #}
+{% if preparazione %}
+<section class="scheda tocco-prep" id="preparazione" style="margin-bottom:12px;scroll-margin-top:16px">
+  {{ avanzamento_prep(preparazione) }}
+  {% if bloccata_da_danni(preparazione) %}
+  {% set dn = v.danni_aperti[0] %}
+  <a class="blocco-danno" href="{{ url_for('main.danno', danno_id=dn.id, torna=url_for('main.veicolo', veicolo_id=v.id)) }}">
+    {{ i('attenzione', 's') }}<span><b>{{ preparazione.prossima_fase }} bloccato:</b> danno da verificare ({{ dn.zona|lower }}). Risolvilo con una foto per continuare.</span></a>
+  {% endif %}
+  {% if preparazione.fasi %}{{ annulla(annullabile(v.id, 'preparazione_fase', prep_id=preparazione.id), 'Annulla “' ~ preparazione.fasi_fatte[-1].nome ~ '”', url_for('main.veicolo', veicolo_id=v.id)) }}{% endif %}
+</section>
+{% elif (v.da_consegnare or v.fase == 'consegnato') and ultima_prep %}
+<div class="scheda" style="margin-bottom:12px">
+  <h3>{{ i('cronometro', 's') }} Tempi di lavorazione</h3>
+  {{ riepilogo_lavorazione(ultima_prep) }}
+  {{ tappe_preparazione(ultima_prep) }}
+  {% if v.stato == 'consegnato' %}{{ annulla(annullabile(v.id, 'consegna'), 'Annulla consegna', url_for('main.veicolo', veicolo_id=v.id)) }}
+  {% elif v.fase == 'pronta' %}{{ annulla(annullabile(v.id, 'preparazione_fase', prep_id=ultima_prep.id), 'Annulla “Pronta”', url_for('main.veicolo', veicolo_id=v.id)) }}{% endif %}
+</div>
+{% endif %}
+
+{# ---- Auto pronta: 1) dove e quando  2) ultimo DDT se è altrove  3) targa  4) consegnata.
+   Resta qui anche durante l'ultimo viaggio: esce solo con la conferma della consegna ---- #}
+{% if v.da_consegnare and g.utente.interno %}
+{% set nella_sede = v.consegna_sede and v.sede_id == v.consegna_sede_id %}
+<section class="scheda consegna" id="consegna">
+  <h3>{{ i('bandiera', 's') }} Consegna al cliente</h3>
+  <ol class="passi-consegna">
+    <li class="{{ 'fatto' if v.consegna_sede }}"><b>Dove e quando</b>
+      {% if v.consegna_sede %}<span>{{ v.consegna_sede.nome }}{% if v.consegna_prevista_at %} · {{ v.consegna_prevista_at|slot }}{% else %} · orario da fissare{% endif %}</span>{% endif %}</li>
+    <li class="{{ 'fatto' if nella_sede else ('ora' if v.verso_consegna) }}"><b>Auto nella sede di consegna</b>
+      {% if v.verso_consegna %}<span>in viaggio con l'ultimo DDT <a href="{{ url_for('main.ddt_dettaglio', ddt_id=mov.ddt.id) }}">{{ mov.ddt.sigla }}</a> · da {{ in_viaggio_da(mov) }}</span>
+      {% elif v.consegna_sede and not nella_sede %}<span>ora è a {{ v.sede.nome }}: serve l'ultimo DDT</span>{% endif %}</li>
+    <li class="{{ 'fatto' if v.targa }}"><b>Targa</b>
+      <span>{{ v.targa if v.targa else 'da inserire prima della consegna' }}</span></li>
+    <li><b>Consegnata</b></li>
+  </ol>
+
+  {% if v.fase == 'pronta' %}
+  <details class="ripiega" {{ 'open' if not v.consegna_sede }} style="margin:12px 0 0">
+    <summary>{{ i('orologio', 's') }} {{ 'Cambia sede o appuntamento' if v.consegna_sede else 'Fissa sede e appuntamento di consegna' }}</summary>
+    <form method="post" action="{{ url_for('main.sede_consegna', veicolo_id=v.id) }}" data-una-volta>
+      {{ csrf_input() }}
+      <label class="campo" style="max-width:420px"><span>Sede di consegna</span>
+        <select name="sede_id" required>{% for s in sedi_consegna %}<option value="{{ s.id }}" {{ 'selected' if s.id == (v.consegna_sede_id or v.sede_id) }}>{{ s.nome }}{{ ' (qui)' if s.id == v.sede_id }}</option>{% endfor %}</select></label>
+      <div class="campo"><span>Appuntamento con il cliente <span class="tenue">(facoltativo · slot di 30 minuti, uno per sede)</span></span>
+        {{ scegli_slot('prevista', slot_consegna, v.consegna_prevista_at, per_sede='sede_id', vuoto='Orario da fissare') }}</div>
+      <button class="btn primario">{{ i('check', 's') }} Conferma</button>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if puo_ultimo_ddt %}
+  <form method="post" action="{{ url_for('main.partenza', veicolo_id=v.id) }}" data-una-volta style="margin-top:14px">
+    {{ csrf_input() }}{{ gps() }}
+    <input type="hidden" name="a_sede_id" value="{{ v.consegna_sede_id }}">
+    <input type="hidden" name="causale" value="Trasferimento tra sedi">
+    <input type="hidden" name="lavorazione" value="Nessuna (solo trasferimento)">
+    <p class="avviso info" style="font-weight:500;margin-bottom:12px">{{ i('doc') }}<span><b>Ultimo DDT:</b> porta l'auto da {{ v.sede.nome }} a {{ v.consegna_sede.nome }}. All'arrivo potrai segnarla consegnata.</span></p>
+    <div class="griglia-2">
+      <label class="campo"><span>Chi sposta il mezzo</span><input name="conducente" list="nomi-utenti" maxlength="120" required value="{{ valori.conducente or '' }}" placeholder="Nome e cognome">
+        <datalist id="nomi-utenti">{% for n in nomi_utenti %}<option value="{{ n }}">{% endfor %}</datalist></label>
+      <label class="campo"><span>Vettore</span><select name="vettore_id" required>{% for vt in vettori %}<option value="{{ vt.id }}" {{ 'selected' if valori.vettore_id == vt.id }}>{{ vt.nome }}</option>{% endfor %}</select></label>
+    </div>
+    <label class="campo"><span>Modalità di trasporto</span><select name="mezzo" required><option value="">Come viaggia l'auto…</option>{% for m in MEZZI_TRASPORTO %}<option>{{ m }}</option>{% endfor %}</select></label>
+    {{ firma_pad("Firma di chi sposta il mezzo", obbligatoria=True) }}
+    <button type="submit" name="azione" value="parti" class="btn primario pieno">{{ i('doc') }} Emetti l'ultimo DDT e parti</button>
+  </form>
+  {% elif nella_sede and not v.targa %}
+  <form method="post" action="{{ url_for('main.modifica_dati_auto', veicolo_id=v.id) }}" class="targa-consegna" data-una-volta>
+    {{ csrf_input() }}<input type="hidden" name="torna" value="{{ url_for('main.veicolo', veicolo_id=v.id) }}#consegna">
+    <p class="avviso info" style="font-weight:500">{{ i('attenzione') }}<span><b>Inserisci la targa:</b> senza targa l'auto non si consegna al cliente. Si inserisce una volta sola.</span></p>
+    <div class="azioni" style="align-items:flex-end">
+      <label class="campo" style="margin:0;flex:1;max-width:260px"><span>Targa</span>
+        <input name="targa" required autocapitalize="characters" class="vin" maxlength="12" placeholder="Es. GH123AB"></label>
+      <button class="btn primario">{{ i('check', 's') }} Salva la targa</button>
+    </div>
+  </form>
+  {% elif puo_consegnare %}
+  <form method="post" action="{{ url_for('main.consegna', veicolo_id=v.id) }}" data-una-volta style="margin-top:14px"
+        onsubmit="return confirm('Confermi che {{ v.descrizione }} è stata consegnata al cliente? Passerà in archivio “Consegnate”.')">
+    {{ csrf_input() }}
+    <button class="btn primario pieno">{{ i('archivio') }} Consegnata al cliente</button>
+  </form>
+  {% elif v.danni_aperti %}
+  <p class="blocco-danno">{{ i('attenzione', 's') }}<span>Prima della consegna va risolto il danno da verificare.</span></p>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ---- DDT predisposto: basta prenderlo in carico ---- #}
+{% if predisposto %}
+<a class="voce" href="{{ url_for('main.ddt_dettaglio', ddt_id=predisposto.ddt.id) }}">
+  <span class="tondo predisposto">{{ i('doc') }}</span>
+  <div class="corpo">
+    <div class="etichetta">DDT {{ predisposto.ddt.sigla }} pronto da ritirare</div>
+    <h3>{{ predisposto.da_sede.nome if predisposto.da_sede else '—' }} → {{ predisposto.a_sede.nome }}</h3>
+    <div class="tratta"><span class="scadenza {{ 'scaduta' if predisposto.scaduto }}">{{ 'Scaduto il' if predisposto.scaduto else 'Ritiro entro' }} {{ predisposto.ritiro_entro_at|data('%d/%m %H:%M') }}</span></div>
+  </div>
+  {{ i('chevron') }}
+</a>
+{% if puo_presa %}
+<div class="barra-azione">
+  <a class="btn primario pieno" href="{{ url_for('main.ddt_dettaglio', ddt_id=predisposto.ddt.id) }}#presa">{{ i('check') }} Prendi in carico e parti</a>
+</div>
+{% endif %}
+
+{# ---- Emissione: solo dall'account del luogo in cui si trova l'auto ---- #}
+{% elif puo_emettere %}
+<section class="azioni-auto {{ 'con-prepara' if puo_preparare else 'senza-prepara' }}">
+  {% if v.sede and v.sede.esterna %}<a class="btn primario pieno" href="{{ url_for('main.sposta', veicolo_id=v.id) }}">{{ i('ritiro') }} Crea DDT di rientro</a>
+  {% else %}<a class="btn primario pieno" href="{{ url_for('main.sposta', veicolo_id=v.id) }}">{{ i('camion') }} Inizia spostamento</a>{% endif %}
+  {% if puo_preparare %}
+  <form method="post" action="{{ url_for('main.avvia_preparazione', veicolo_id=v.id) }}" data-una-volta>
+    {{ csrf_input() }}
+    <button class="btn pieno btn-prepara">{{ i('brilla') }} Metti in preparazione</button>
+  </form>
+  {% endif %}
+  {% if puo_predisporre %}
+  <details class="predisponi">
+    <summary class="btn pieno btn-predisponi">{{ i('orologio') }} Predisponi DDT da ritirare</summary>
+    <form method="post" action="{{ url_for('main.partenza', veicolo_id=v.id) }}" class="scheda" data-una-volta>
+      {{ csrf_input() }}{{ gps() }}
+      <p class="tenue piccolo" style="margin-top:0">Il DDT nasce subito con il suo numero; chi ritira l'auto tocca l'adesivo, lo prende in carico, firma e parte.</p>
+      {{ campi_movimento(valori, gruppi_sedi, causali, lavorazioni, vettori, nomi_utenti, etichetta_conducente='Chi la ritira (facoltativo)') }}
+      <label class="campo"><span>Da ritirare entro</span>
+        <select name="ore_ritiro">{% for o in ore_ritiro %}<option value="{{ o }}" {{ 'selected' if o == 24 }}>{{ o }} ore</option>{% endfor %}</select></label>
+      <button type="submit" name="azione" value="predisponi" formnovalidate class="btn primario pieno">{{ i('orologio') }} Predisponi DDT</button>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+{% elif mov %}
+<a class="voce" href="{{ url_for('main.arrivo_da_tap', ddt_id=mov.ddt.id) }}">
+  <span class="tondo in_viaggio">{{ i('camion') }}</span>
+  <div class="corpo">
+    <div class="etichetta">DDT {{ mov.ddt.sigla }} · in viaggio da {{ in_viaggio_da(mov) }}</div>
+    <h3>{{ mov.da_sede.nome if mov.da_sede else '—' }} → {{ mov.a_sede.nome }}</h3>
+  </div>
+  {{ i('chevron') }}
+</a>
+{% endif %}
+
+</div>
+
+<div class="col-sotto">
+
+{% if v.lat is not none and v.stato != 'consegnato' %}
+<h2>{{ i('pin') }} Sulla mappa</h2>
+<div id="mappa" data-lat="{{ v.lat }}" data-lon="{{ v.lon }}"></div>
+{% if v.sede and v.sede.esterna and v.stato == 'in_sede' %}<a class="btn pieno portami" href="https://www.google.com/maps/dir/?api=1&destination={{ v.lat }},{{ v.lon }}" target="_blank" rel="noopener">{{ i('pin') }} <span>Portami qui <span class="tenue piccolo portami-dove">· navigazione verso {{ v.sede.nome }}</span></span></a>{% endif %}
+{% endif %}
+
+{% if v.stato not in ('consegnato', 'in_viaggio') %}
+<a class="btn pieno btn-danno" href="{{ url_for('main.nuovo_danno', veicolo_id=v.id) }}" style="margin-top:14px">{{ i('attenzione') }} Segnala danno</a>
+{% endif %}
+
+{% if storico %}
+<h2>{{ i('doc') }} DDT su questo telaio <span class="conta-titolo">{{ storico|length }}</span></h2>
+{% for m in storico %}{{ ddt_mini(m.ddt) }}{% endfor %}
+{% endif %}
+
+</div>
+</div>
+
+{% if g.utente.ruolo == 'admin' %}{% set n_ddt = v.movimenti|selectattr('ddt')|list|length %}
+{% if not n_ddt or config.DEMO %}
+<details class="ripiega zona-pericolo" style="margin-top:24px">
+  <summary>Elimina questa auto</summary>
+  <form method="post" action="{{ url_for('main.elimina_veicolo', veicolo_id=v.id) }}" class="scheda" data-una-volta
+        onsubmit="return confirm('Eliminare definitivamente {{ v.descrizione }}?')">
+    {{ csrf_input() }}
+    <p class="tenue piccolo" style="margin-top:0">L'auto sparisce da Getvingo insieme a storico, posizioni e danni{% if v.tag %}; l'adesivo {{ v.tag.codice }} torna libero e si può riabbinare{% endif %}.
+      {% if n_ddt %}<b style="color:var(--errore)">Modalità demo: vengono eliminati anche {{ n_ddt }} DDT.</b>{% endif %} Non si può annullare.</p>
+    <button class="btn pericolo">{{ i('attenzione', 's') }} Elimina definitivamente</button>
+  </form>
+</details>
+{% endif %}{% endif %}
+{% endblock %}
+{% block script %}
+{% if v.lat is not none and v.stato != 'consegnato' %}
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  (function () {
+    var el = document.getElementById('mappa');
+    var p = [parseFloat(el.dataset.lat), parseFloat(el.dataset.lon)];
+    var mappa = L.map(el, { zoomControl: true }).setView(p, 19);
+    bloccaMappa(mappa);
+    // satellite Esri: si riconosce il punto esatto nel piazzale (OpenStreetMap blocca le richieste, errore 418)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 20, maxNativeZoom: L.Browser.retina ? 18 : 19, detectRetina: true, attribution: 'Tiles © Esri' }).addTo(mappa);
+    L.circleMarker(p, { radius: 10, color: '#fff', weight: 3, fillColor: '#1F6FB2', fillOpacity: 1 }).addTo(mappa);
+  })();
+</script>
+{% endif %}
+{% endblock %}

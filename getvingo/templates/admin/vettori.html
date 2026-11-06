@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_macro.html" import indietro %}
+{% block larghezza %}{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina"><div>{{ indietro(url_for('admin.indice')) }}<h1>Vettori</h1></div></div>
+<p class="tenue">Il vettore è stampato sul DDT. Inserisci anche la concessionaria stessa se trasporta con mezzi propri.</p>
+<details class="ripiega"><summary>+ Aggiungi un vettore</summary>
+<form method="post" class="scheda" style="margin-bottom:16px">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <div class="griglia-2">
+    <label class="campo"><span>Nome / ragione sociale</span><input name="nome" required></label>
+    <label class="campo"><span>Partita IVA</span><input name="piva"></label>
+  </div>
+  <label class="campo"><span>Indirizzo</span><input name="indirizzo"></label>
+  <button class="btn primario">Aggiungi</button>
+</form>
+</details>
+<div class="scorre"><table class="tabella">
+  <thead><tr><th>Nome</th><th>P.IVA</th><th>Indirizzo</th><th></th></tr></thead>
+  <tbody>
+  {% for vt in vettori %}
+    <tr class="{{ '' if vt.attivo else 'spento' }}">
+      <td><a href="{{ url_for('admin.vettore', vettore_id=vt.id) }}"><b>{{ vt.nome }}</b></a></td><td class="num" style="font-weight:400">{{ vt.piva }}</td><td class="tenue">{{ vt.indirizzo }}</td>
+      <td style="text-align:right"><form method="post" action="{{ url_for('admin.attiva', tipo='vettore', oggetto_id=vt.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button class="btn-link">{{ 'Disattiva' if vt.attivo else 'Riattiva' }}</button></form></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

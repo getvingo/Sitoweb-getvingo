@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, csrf_input %}
+{% from "_auto.html" import carta_auto, info_auto, ddt_mini, avanzamento_prep, avanzamento_lavoro, sollecito_lavoro, rientro_lavoro %}
+{% block titolo %}{{ v.descrizione }} · Getvingo{% endblock %}
+{% block contenuto %}
+{# Dati dell'auto subito in alto: si riconosce l'auto prima di fare qualsiasi cosa #}
+<div class="tocco-testa">
+  <p class="tocco-nota">{{ i('nfc', 's') }} Adesivo {{ v.tag.codice if v.tag else '' }} toccato · posizione aggiornata</p>
+  {{ carta_auto(v) }}
+  {% if v.danni_aperti %}<a class="blocco-danno" href="{{ url_for('main.danno', danno_id=v.danni_aperti[0].id, torna=url_for('main.tocco_scelta', veicolo_id=v.id)) }}">{{ i('attenzione', 's') }}<span><b>{{ v.danni_aperti|length }} {{ 'danno' if v.danni_aperti|length == 1 else 'danni' }} da verificare</b> · tocca per vedere</span></a>{% endif %}
+  {{ info_auto(v) }}
+</div>
+
+{# Preparazione: anello di avanzamento + passi. Ogni passo si conferma con un tocco NFC #}
+{% if prep %}
+{% set fatti = prep.fasi|length %}{% set totale = prep.FASI|length %}
+<section class="scheda tocco-prep {{ 'completata' if prep.completata_at }}" data-avanzamento>
+  {{ avanzamento_prep(prep, fatto, da) }}
+
+  {% if not prep.completata_at %}
+  {% if bloccata_da_danni(prep) %}
+  <a class="blocco-danno" href="{{ url_for('main.danno', danno_id=v.danni_aperti[0].id, torna=url_for('main.tocco_scelta', veicolo_id=v.id)) }}">{{ i('attenzione', 's') }}<span><b>{{ prep.prossima_fase }} bloccato:</b> c'è un danno da verificare. Risolvilo con una foto per continuare.</span></a>
+  {% elif tocco_valido %}
+  <form method="post" action="{{ url_for('main.tocco_passo', veicolo_id=v.id) }}" data-una-volta>
+    {{ csrf_input() }}
+    <button class="btn pieno btn-fatto {{ 'finale' if prep.prossima_fase == 'Pronta' }}">
+      <span class="spunta-tonda">{{ i('check') }}</span>
+      <span class="testo-fatto"><small>Passo {{ fatti + 1 }} di {{ totale }} · vale questo tocco</small>
+        <b>{{ 'Segna come pronta' if prep.prossima_fase == 'Pronta' else prep.prossima_fase ~ (' fatta' if prep.prossima_fase == 'Preparazione' else ' fatto') }}</b></span>
+    </button>
+  </form>
+  {% else %}
+  <div class="attendi-tocco" role="status">
+    <span class="onde-nfc" aria-hidden="true"><i></i><i></i><i></i>{{ i('nfc') }}</span>
+    <span><b>Tocca l'adesivo NFC per il prossimo passo</b><small>“{{ prep.prossima_fase }}”: ogni passo si conferma con un tocco sull'auto</small></span>
+  </div>
+  {% if config.DEMO and v.tag %}<a class="btn-link piccolo simula-tocco" href="{{ url_for('main.tap', codice=v.tag.codice) }}">Demo: simula il tocco dell'adesivo {{ v.tag.codice }}</a>{% endif %}
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% set lavoro = v.ultimo_arrivo if v.fase in ('lavorazione', 'da_ritirare') else none %}
+{% if lavoro and lavoro.con_lavorazione %}
+<section class="scheda tocco-prep tocco-lavoro">
+  {{ avanzamento_lavoro(lavoro, anello=True) }}
+  {{ rientro_lavoro(v, lavoro, pulsante=False) }}
+  {{ sollecito_lavoro(lavoro, url_for('main.tocco_scelta', veicolo_id=v.id)) }}
+</section>
+{% endif %}
+
+<div class="pila tocco-scelte">
+  {% if puo_spostare %}
+  {% if v.sede and v.sede.esterna %}<a class="btn primario pieno" href="{{ url_for('main.sposta', veicolo_id=v.id) }}">{{ i('ritiro') }} Crea DDT di rientro</a>
+  {% else %}<a class="btn primario pieno" href="{{ url_for('main.sposta', veicolo_id=v.id) }}">{{ i('camion') }} Inizia spostamento</a>{% endif %}
+  {% endif %}
+  {% if not no_preparazione %}
+  <form method="post" action="{{ url_for('main.avvia_preparazione', veicolo_id=v.id) }}" data-una-volta>
+    {{ csrf_input() }}<input type="hidden" name="torna" value="{{ url_for('main.tocco_scelta', veicolo_id=v.id) }}">
+    <button type="submit" class="btn pieno btn-prepara">{{ i('brilla') }} Metti in preparazione</button>
+  </form>
+  {% endif %}
+  <a class="btn pieno btn-danno" href="{{ url_for('main.nuovo_danno', veicolo_id=v.id) }}">{{ i('attenzione') }} Segnala danno</a>
+</div>
+
+<details class="tocco-dati">
+  <summary class="btn pieno">{{ i('doc') }} DDT su questo telaio <span class="conta">{{ ddt|length }}</span></summary>
+  <section class="tocco-ddt-blocco">
+    {% for d in ddt %}{{ ddt_mini(d) }}{% else %}<p class="tenue piccolo">Nessun DDT emesso finora.</p>{% endfor %}
+  </section>
+</details>
+<a class="btn-link piccolo" href="{{ url_for('main.veicolo', veicolo_id=v.id) }}" style="display:inline-block;margin-top:12px">Apri la scheda completa {{ i('freccia', 's') }}</a>
+
+{% if not puo_spostare and not prep and not lavoro %}
+<p class="tenue piccolo" style="margin-top:12px">{% if v.movimento_predisposto %}C'è già un DDT da ritirare: lo trovi nella scheda completa.{% elif v.fase == 'pronta' %}Auto pronta: si sposta solo con l'ultimo DDT verso la sede di consegna, da indicare nella scheda completa.{% else %}Da qui non puoi spostare quest'auto: la bolla la emette chi la ha in carico.{% endif %}</p>
+{% endif %}
+{% endblock %}

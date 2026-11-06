@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, indietro %}
+{% block titolo %}Simula tocco · Getvingo{% endblock %}
+{% block contenuto %}
+{{ indietro(url_for('main.home')) }}
+<div class="titolo-pagina"><div><div class="sopratitolo">Demo</div><h1>Simula tocco NFC</h1>
+  <p class="descrizione-pagina">Tocca un adesivo come se avvicinassi il telefono all'auto. Niente GPS: in demo si usa la posizione già nota.</p></div></div>
+<div class="destinazioni">
+  {% for titolo, elenco in gruppi if elenco %}
+  <h3>{{ titolo }}</h3>
+  {% for t in elenco %}
+  <a class="destinazione-btn" href="{{ url_for('main.tap', codice=t.codice) }}">
+    <span class="tondo-piccolo">{{ i('nfc', 's') }}</span>
+    <span>{% if t.veicolo %}<b>{{ t.veicolo.descrizione }}</b><small>Adesivo {{ t.codice }} · …{{ t.veicolo.vin[-8:] }} · {% if t.veicolo.stato == 'in_viaggio' and t.veicolo.movimento_aperto %}verso {{ t.veicolo.movimento_aperto.a_sede.nome }}{% else %}{{ t.veicolo.sede.nome if t.veicolo.sede else '' }}{% endif %}</small>{% else %}<b>Adesivo {{ t.codice }}</b><small>Libero</small>{% endif %}</span>
+  </a>
+  {% endfor %}
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% from "_macro.html" import i, csrf_input %}
+
+{# Lavorazione lasciata da indicare alla partenza col tocco: va completata prima della chiusura #}
+{% macro lavorazione_da_indicare(d, lavorazioni, da='') %}
+<form method="post" action="{{ url_for('main.ddt_lavorazione', ddt_id=d.id) }}" data-una-volta class="scheda bordo-da-fare" style="margin-top:16px">
+  {{ csrf_input() }}<input type="hidden" name="da" value="{{ da }}">
+  <h3 style="margin-top:0">{{ i('chiave', 's') }} Lavorazione da indicare</h3>
+  <p class="tenue piccolo">Senza lavorazione il DDT non si chiude all'arrivo.</p>
+  <label class="campo"><span>Lavorazione da fare</span>
+    <select name="lavorazione" required>
+      <option value="">Scegli…</option>
+      {% for l in lavorazioni %}<option>{{ l }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="campo"><span>Dettagli lavorazione</span>
+    <input name="lavorazione_note" maxlength="300" placeholder="Es. riparare paraurti posteriore">
+  </label>
+  <button type="submit" class="btn primario">{{ i('check') }} Salva lavorazione</button>
+</form>
+{% endmacro %}
+
+{# "Arrivato a destinazione": il telefono manda la posizione, il server chiude se è entro il raggio #}
+{% macro form_arrivo(d, m, raggio, id='') %}
+<form method="post" action="{{ url_for('main.ddt_arrivo', ddt_id=d.id) }}" {% if id %}id="{{ id }}"{% endif %} data-una-volta data-gps-obbligatorio {{ 'data-senza-gps-ok' if g.utente.ruolo == 'admin' }} style="margin-top:16px">
+  {{ csrf_input() }}<input type="hidden" name="lat"><input type="hidden" name="lon">
+  <details class="ripiega">
+    <summary>{{ i('matita', 's') }} Vuoi lasciare una nota di ricezione?</summary>
+    <div class="scheda">
+      <label class="campo" style="margin:0"><span>Note di ricezione</span><input name="note" maxlength="300" placeholder="Es. graffio già presente sul cofano"></label>
+    </div>
+  </details>
+  {% if d.multiplo %}
+  <p class="tenue piccolo" style="margin-top:12px">Chiudi il DDT per tutte le {{ d.movimenti|length }} auto.</p>
+  {% else %}
+  <label class="spunta" style="margin-top:12px"><input type="checkbox" name="danno" value="1"><span><b>Ho trovato un danno</b>: dopo la conferma ti chiedo le foto.</span></label>
+  {% endif %}
+  <p class="avviso errore arrivo-esito" data-gps-errore hidden></p>
+  <div class="barra-azione">
+    <p class="riepilogo">si chiude entro {{ raggio }} m da {{ m.a_sede.nome }}{% if g.utente.ruolo == 'admin' %} · da fuori, come admin, per conto del destinatario{% endif %}</p>
+    <button type="submit" class="btn primario pieno" {{ 'disabled' if not m.lavorazione }}>{{ i('pin') }} Arrivato a destinazione</button>
+  </div>
+</form>
+{% endmacro %}

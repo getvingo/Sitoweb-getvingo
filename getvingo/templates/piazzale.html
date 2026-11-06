@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, badge_veicolo, badge_condizione, icona_fase, marchio, filtro_select, fase_css, legenda, targa %}
+{% from "_auto.html" import in_viaggio_da, avanzamento_lavoro %}
+{% block head %}<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">{% endblock %}
+{% block titolo %}Stock · Getvingo{% endblock %}
+{% block larghezza %}largo{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina"><div><h1>Stock <span class="conteggio">{{ totale }}</span></h1>
+  <p class="descrizione-pagina">Tutte le auto finché non sono consegnate al cliente: in sede, in preparazione, pronte, dai fornitori o in viaggio, con la posizione sulla mappa.</p></div>
+  <a class="btn piccolo primario" href="{{ url_for('main.nuova_auto') }}">+ Nuova auto</a></div>
+
+<form>
+  <div class="ricerca">{{ i('cerca') }}<input name="q" value="{{ f.q }}" placeholder="Telaio, modello o colore" aria-label="Cerca nello stock"></div>
+  <details class="ripiega filtri-ripiegabili" style="margin-top:10px" {{ 'open' if filtri_attivi }}>
+  <summary>{{ i('gestione', 's') }} Filtri{% if filtri_attivi %} · attivi{% endif %}</summary>
+  <div class="barra-filtri">
+    {{ filtro_select('tipologia', 'Tipologia', opzioni.tipologia, f.tipologia, 'Tutte') }}
+    {{ filtro_select('marca', 'Marca', opzioni.marca, f.marca, 'Tutte') }}
+    {{ filtro_select('modello', 'Modello', opzioni.modello, f.modello) }}
+    {{ filtro_select('colore', 'Colore', opzioni.colore, f.colore) }}
+    {{ filtro_select('fase', 'Stato', opzioni.fase, f.fase) }}
+  </div>
+  </details>
+  {% if filtri_attivi or f.q %}<a class="chip" href="{{ url_for('main.piazzale') }}">✕ Azzera filtri</a>{% endif %}
+</form>
+
+{# scelta della sede a tutta larghezza, sopra mappa ed elenco: filtra tutti e due #}
+{% if piazzali %}
+<nav class="interruttore filtro-gruppo in-riga tutta-larghezza" id="scegli-piazzale" style="margin-top:14px" aria-label="Scegli la sede">
+  <a href="#" data-sede="" class="attivo" title="Tutte le sedi">{{ i('piazzale') }} <span class="nome" data-corto="Tutte">Tutte le sedi</span> <span class="n">{{ totale }}</span></a>
+  {% for p in piazzali %}<a href="#" data-sede="{{ p.id }}" title="{{ p.nome }}">{% if p.esterna %}{{ i('chiave', 's') }} {% endif %}<span class="nome">{{ p.nome }}</span> <span class="n">{{ p.n }}</span></a>{% endfor %}
+</nav>
+{% endif %}
+<div class="stock-layout">
+<aside class="stock-mappa">
+{% if piazzali %}
+<div id="mappa-piazzale"></div>
+<p class="tenue piccolo" id="mappa-aiuto" style="margin:-8px 0 14px">Tocca una sede per vedere come sono disposte le auto.</p>
+{% endif %}
+</aside>
+<div class="stock-elenco">
+{{ legenda(gruppi|map(attribute='voci')|sum(start=[])) }}
+{% for gr in gruppi %}
+<section class="gruppo zona-{{ gr.chiave.split('-')[0] }}" data-zona="{{ gr.chiave }}">
+  <div class="gruppo-testa"><h3>{{ i(gr.icona, 's') }} {{ gr.titolo }} <span class="conteggio">{{ gr.voci|length }}</span></h3></div>
+  <div class="lista">
+  {% for v in gr.voci %}
+    <div class="voce {{ fase_css(v) }} {{ 'con-danno' if v.danni_aperti }}" style="display:block" id="auto-{{ v.id }}" data-sede="{{ v.sede_id or '' }}">
+      <div class="riga-auto" style="display:flex;gap:12px;align-items:center">
+        {{ marchio(v) }}
+        <a href="{{ url_for('main.veicolo', veicolo_id=v.id) }}" style="color:inherit;flex:1;min-width:0">
+          <h3>{{ v.descrizione }}{{ targa(v) }}{% if v.tipologia == 'commerciale' %}<span class="tipologia">Comm.</span>{% endif %}</h3>
+          <div class="tenue piccolo">{{ v.vin|vin }}</div></a>
+        <div class="lato" style="text-align:right">{% if v.lat is not none %}<button type="button" class="btn-link piccolo sulla-mappa" data-sulla-mappa="{{ v.id }}">{{ i('pin', 's') }} Sulla mappa</button><br>{% endif %}{{ badge_condizione(v) }}{% if v.danni_aperti %}<div style="margin-top:6px"><span class="badge danno con-icona">{{ i('attenzione', 's') }}Danno</span></div>{% endif %}</div>
+      </div>
+      {% if gr.chiave == 'preparazione' %}{% set prep = v.preparazione_attiva %}
+      <div class="stato-zona">
+        <div class="barra-avanzamento"><span style="width:{{ prep.avanzamento }}%"></span></div>
+        <div class="piccolo"><b>Passo {{ prep.fasi|length + 1 }} di {{ prep.FASI|length }} · {{ prep.prossima_fase }}</b> · {{ prep.avanzamento }}% · {{ v.sede.nome if v.sede else '' }}{% if prep.pronta_entro_at %} · {{ prep.pronta_entro_at|slot }}{% endif %}</div>
+      </div>
+      {% elif gr.chiave == 'esterne' %}{% set m = v.ultimo_arrivo %}
+      <div class="stato-zona">
+        <div class="piccolo" style="margin-bottom:6px">{{ i('chiave', 's') }} <b>{{ v.sede.nome }}</b>{% if m %} · {{ m.lavorazione }}{% endif %}</div>
+        {% if m and m.con_lavorazione %}{{ avanzamento_lavoro(m) }}{% endif %}
+      </div>
+      {% elif gr.chiave == 'pronte' %}
+      <div class="stato-zona piccolo">{{ i('bandiera', 's') }} {% if v.consegna_sede %}Consegna a <b>{{ v.consegna_sede.nome }}</b>{% if v.consegna_prevista_at %} · {{ v.consegna_prevista_at|slot }}{% else %} · orario da fissare{% endif %}{% if v.sede_id != v.consegna_sede_id %} · ora a {{ v.sede.nome }}, serve l'ultimo DDT{% endif %}{% else %}Pronta a {{ v.sede.nome }} · <b>sede e appuntamento da fissare</b>{% endif %}{% if not v.targa %} · senza targa{% endif %}</div>
+      {% elif gr.chiave == 'viaggio' %}{% set m = v.movimento_aperto %}
+      {% if m %}<div class="stato-zona piccolo">{{ i('camion', 's') }} {{ m.da_sede.nome if m.da_sede else '—' }} → <b>{{ m.a_sede.nome }}</b> · in viaggio da {{ in_viaggio_da(m) }}{% if v.verso_consegna %} · <b>ultimo DDT, poi consegna</b>{% endif %}</div>{% endif %}
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="vuoto">{{ i('piazzale') }}Nessuna auto in stock{{ ' con questi filtri' if filtri_attivi or f.q }}.</div>
+{% endfor %}
+</div>
+</div>
+{% endblock %}
+{% block script %}
+{% if piazzali %}
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  (function () {
+    var auto = {{ auto|tojson }}, piazzali = {{ piazzali|tojson }};
+    var ZOOM_AUTO = 16;  // da qui in su si vedono le singole auto
+    var mappa = L.map('mappa-piazzale', { zoomControl: true });
+    bloccaMappa(mappa);
+    // tessere Esri: i server OpenStreetMap bloccano le richieste del portale (errore 418)
+    var esri = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+    // detectRetina: sugli schermi ad alta risoluzione (telefoni, Mac) si caricano tessere più dettagliate
+    // con detectRetina Leaflet chiede un livello in più: oltre il 19 Esri non ha immagini ("Map data not yet available")
+    var nitida = { maxZoom: 20, maxNativeZoom: L.Browser.retina ? 18 : 19, detectRetina: true, attribution: 'Tiles © Esri' };
+    // solo satellite, a ogni distanza: niente mappa stradale né scelta dello sfondo
+    L.tileLayer(esri + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', nitida).addTo(mappa);
+    function colore(fase) {
+      var el = document.createElement('i'); el.className = fase; document.body.appendChild(el);
+      var c = getComputedStyle(el).getPropertyValue('--fase').trim() || '#1F6FB2'; el.remove(); return c;
+    }
+    function popup(titolo, sotto, url, link) {
+      var d = document.createElement('div');
+      var b = document.createElement('b'); b.textContent = titolo; d.appendChild(b);
+      var s = document.createElement('div'); s.textContent = sotto; d.appendChild(s);
+      if (url) { var a = document.createElement('a'); a.href = url; a.textContent = link; d.appendChild(a); }
+      return d;
+    }
+    var strato_piazzali = L.featureGroup(), strato_auto = L.featureGroup();
+    piazzali.forEach(function (p) {
+      L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html: '<div class="marker-sede">' + p.n + '</div>', iconSize: [36, 36], iconAnchor: [18, 18] }) })
+        .on('click', function () { scegli(String(p.id)); }).addTo(strato_piazzali);
+    });
+    var marcatori = {};
+    auto.forEach(function (a) {
+      marcatori[a.id] = L.circleMarker([a.lat, a.lon], { radius: 11, color: '#fff', weight: 3, fillColor: colore(a.fase), fillOpacity: 1 })
+        .bindTooltip(a.titolo, { direction: 'top', offset: [0, -10], className: 'etichetta-mappa' })
+        .bindPopup(popup(a.titolo, a.sotto + ' · ' + a.stato, a.url, 'Apri scheda →')).addTo(strato_auto);
+    });
+    // "Sulla mappa" dall'elenco: la mappa va sull'auto e la evidenzia
+    document.querySelectorAll('[data-sulla-mappa]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var a = auto.filter(function (x) { return String(x.id) === b.dataset.sullaMappa; })[0];
+        if (!a) return;
+        chip.forEach(function (c) { c.classList.toggle('attivo', c.dataset.sede === String(a.sede)); });
+        mappa.flyTo([a.lat, a.lon], 19, { duration: 0.8 });
+        mappa.once('moveend', function () { marcatori[a.id].openPopup(); });
+        if (window.matchMedia('(max-width: 1023px)').matches) document.getElementById('mappa-piazzale').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+    function aggiornaStrati() {
+      var vicino = mappa.getZoom() >= ZOOM_AUTO;
+      if (vicino) { mappa.removeLayer(strato_piazzali); strato_auto.addTo(mappa); }
+      else { mappa.removeLayer(strato_auto); strato_piazzali.addTo(mappa); }
+    }
+    mappa.on('zoomend', aggiornaStrati);
+
+    var chip = document.querySelectorAll('#scegli-piazzale a'), gruppi = document.querySelectorAll('.gruppo[data-zona]');
+    function scegli(id) {
+      chip.forEach(function (c) { c.classList.toggle('attivo', c.dataset.sede === id); });
+      gruppi.forEach(function (g) {
+        var visibili = 0;
+        g.querySelectorAll('.voce[data-sede]').forEach(function (v) {
+          v.hidden = id !== '' && v.dataset.sede !== id;
+          if (!v.hidden) visibili++;
+        });
+        g.hidden = !visibili;
+      });
+      var punti = id ? auto.filter(function (a) { return String(a.sede) === id; }).map(function (a) { return [a.lat, a.lon]; })
+                     : piazzali.map(function (p) { return [p.lat, p.lon]; });
+      if (id && !punti.length) { var p = piazzali.filter(function (x) { return String(x.id) === id; })[0]; punti = [[p.lat, p.lon]]; }
+      var limiti = L.latLngBounds(punti).pad(id ? 0.35 : 0.3);
+      mappa.flyToBounds(limiti, { maxZoom: id ? 19 : 14, duration: 0.9 });
+      document.getElementById('mappa-aiuto').textContent = id ? 'Auto colorate per stato: toccane una per aprirla.' : 'Tocca una sede per vedere come sono disposte le auto.';
+      try {  // l'indirizzo ricorda il piazzale scelto, senza perdere gli altri filtri
+        var q = new URLSearchParams(location.search);
+        if (id) q.set('sede', id); else q.delete('sede');
+        history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : ''));
+      } catch (e) {}
+    }
+    chip.forEach(function (c) { c.addEventListener('click', function (e) { e.preventDefault(); scegli(c.dataset.sede); }); });
+
+    // vista iniziale: tutti i piazzali, oppure quello indicato nell'indirizzo
+    var iniziale = '{{ f.sede }}';
+    var tutti = L.latLngBounds(piazzali.map(function (p) { return [p.lat, p.lon]; })).pad(0.3);
+    mappa.fitBounds(tutti, { maxZoom: 14 });
+    aggiornaStrati();
+    if (iniziale) setTimeout(function () { scegli(iniziale); }, 300);
+  })();
+</script>
+{% endif %}
+{% endblock %}

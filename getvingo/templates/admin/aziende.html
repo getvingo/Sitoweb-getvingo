@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, indietro %}
+{% block contenuto %}
+<div class="titolo-pagina"><div>{{ indietro(url_for('admin.indice')) }}<h1>Aziende e utenti</h1></div></div>
+<p class="tenue">Ogni azienda è un gruppo: dati e firma si inseriscono una volta sola e valgono per tutti i suoi utenti.</p>
+<div class="lista">
+  <a class="voce" href="{{ url_for('admin.gruppo_concessionaria') }}">
+    <span class="tondo predisposto">{{ i('sede') }}</span>
+    <div class="corpo"><h3>{{ azienda.ragione_sociale if azienda else 'Concessionaria' }}</h3>
+      <div class="tratta">Concessionaria · {{ interni|length }} utenti · {{ 'firma ✓' if azienda and azienda.firma else 'firma mancante' }}</div></div>
+    {{ i('chevron') }}
+  </a>
+  {% for s in fornitori %}
+  <a class="voce" href="{{ url_for('admin.gruppo_fornitore', sede_id=s.id) }}">
+    <span class="tondo lavorazione">{{ i('chiave') }}</span>
+    <div class="corpo"><h3>{{ s.nome }}</h3>
+      <div class="tratta">{{ s.TIPI[s.tipo] }} · {{ s.utenti|length }} {{ 'utente' if s.utenti|length == 1 else 'utenti' }} · {{ 'firma ✓' if s.firma else 'firma mancante' }}</div></div>
+    {{ i('chevron') }}
+  </a>
+  {% endfor %}
+</div>
+<p class="tenue piccolo" style="margin-top:14px">Per aggiungere un nuovo fornitore crealo in <a href="{{ url_for('admin.sedi') }}">Sedi e destinazioni</a> con tipo Carrozzeria, Officina o Altro fornitore: comparirà qui.</p>
+{% endblock %}

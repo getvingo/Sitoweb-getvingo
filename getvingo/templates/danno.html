@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, csrf_input, annulla, targa %}
+{% block titolo %}Danno · {{ d.veicolo.descrizione }} · Getvingo{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina">
+  <div><a class="torna-indietro" href="{{ torna }}" data-indietro>{{ i('indietro', 's') }} Indietro</a><h1>{{ d.zona }}</h1></div>
+  {% if d.aperto %}<span class="badge danno">Da verificare</span>{% else %}<span class="badge chiuso">Risolto</span>{% endif %}
+</div>
+
+<a class="voce" href="{{ url_for('main.veicolo', veicolo_id=d.veicolo_id) }}" style="margin-bottom:14px">
+  <span class="tondo {{ 'danno' if d.aperto }}">{{ i('auto') }}</span>
+  <div class="corpo"><h3>{{ d.veicolo.descrizione }}{{ condizione(d.veicolo) }}{{ targa(d.veicolo) }}</h3><div class="tenue piccolo">{{ d.veicolo.vin|vin }}</div></div>
+  {{ i('chevron') }}
+</a>
+
+<div class="documento">
+  <div class="sezioni">
+    <div class="sez larga"><div class="etichetta">Cosa è stato visto</div><div class="valore">{{ d.descrizione }}{{ condizione(d) }}</div></div>
+    <div class="sez"><div class="etichetta">Dove</div><div class="valore">{{ d.CONTESTI[d.contesto] }}</div>
+      {% if d.movimento %}<div class="tenue piccolo">DDT <a href="{{ url_for('main.ddt_dettaglio', ddt_id=d.movimento.ddt.id) }}">{{ d.movimento.ddt.sigla }}</a> · {{ d.movimento.da_sede.nome if d.movimento.da_sede else '—' }} → {{ d.movimento.sede_arrivo_effettiva.nome }}</div>{% endif %}</div>
+    <div class="sez"><div class="etichetta">Segnalato da</div><div class="valore">{{ d.segnalato_da.nome }}</div><div class="tenue piccolo">{{ d.segnalato_at|data }}</div></div>
+  </div>
+</div>
+
+<h2>{{ i('foto', 's') }} Foto del danno · {{ d.foto_segnalazione|length }}</h2>
+<div class="galleria">{% for f in d.foto_segnalazione %}<a href="{{ url_for('main.foto', nome=f.file) }}" target="_blank"><img src="{{ url_for('main.foto', nome=f.file) }}" alt="Foto del danno {{ loop.index }}"></a>{% endfor %}</div>
+
+{% if not d.aperto and d.risolto_at %}
+<h2 style="color:var(--ok)">{{ i('check', 's') }} Risolto</h2>
+<p style="margin-top:-4px">Da <b>{{ d.risolto_da.nome }}</b> il {{ d.risolto_at|data }}{% if d.nota_risoluzione %} · “{{ d.nota_risoluzione }}”{% endif %}</p>
+{% if d.foto_risoluzione %}
+<div class="galleria">{% for f in d.foto_risoluzione %}<a href="{{ url_for('main.foto', nome=f.file) }}" target="_blank"><img src="{{ url_for('main.foto', nome=f.file) }}" alt="Foto della riparazione {{ loop.index }}"></a>{% endfor %}</div>
+{% endif %}
+{{ annulla(annullabile(d.veicolo_id, 'danno_risolto', danno_id=d.id), 'Riapri il danno', url_for('main.danno', danno_id=d.id)) }}
+{% endif %}
+
+{% if d.aperto %}
+{{ annulla(annullabile(d.veicolo_id, 'danno', danno_id=d.id), 'Elimina segnalazione (errata)', url_for('main.danni')) }}
+{% if g.utente.interno %}
+<h2>Segna come risolto</h2>
+<form method="post" action="{{ url_for('main.risolvi_danno', danno_id=d.id) }}" enctype="multipart/form-data"
+      data-foto data-foto-manca="Serve almeno una foto dell'auto riparata.">
+  {{ csrf_input() }}<input type="hidden" name="torna" value="{{ url_for('main.danno', danno_id=d.id) }}">
+  <div class="scheda">
+    <label class="foto-vin" style="color:var(--ok)">
+      {{ i('foto') }} Fotografa la zona riparata
+      <input type="file" data-foto-input accept="image/*" capture="environment" multiple hidden>
+    </label>
+    <div class="anteprime" data-foto-anteprime></div>
+    <p class="tenue piccolo" data-foto-stato style="margin:6px 0 14px">Obbligatoria: almeno una foto che mostri il danno riparato (o che non c'era).</p>
+    <label class="campo" style="margin:0"><span>Nota <span class="tenue">(facoltativa)</span></span>
+      <input name="nota" maxlength="300" placeholder="Es. riparato in carrozzeria, era già presente…"></label>
+  </div>
+  <div class="barra-azione"><button class="btn primario pieno" style="background:var(--ok);border-color:var(--ok)">{{ i('check') }} Danno risolto</button></div>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}
+{% block script %}<script src="{{ url_for('static', filename='foto.js') }}"></script>{% endblock %}

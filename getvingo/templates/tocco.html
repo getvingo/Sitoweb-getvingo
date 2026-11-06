@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, csrf_input %}
+{% block titolo %}Posizione · Getvingo{% endblock %}
+{% block contenuto %}
+<div class="arrivo-hero" style="margin-top:12px">
+  <span class="tondo in_viaggio" id="tocco-icona">{{ i('pin') }}</span>
+  {% if tag.veicolo %}<div class="sopratitolo">{{ tag.veicolo.descrizione }}{{ condizione(tag.veicolo) }}</div>{% endif %}
+  <h1 id="tocco-titolo">Rilevo la posizione…</h1>
+  <p class="tenue" id="tocco-testo">Ogni tocco aggiorna dove si trova l'auto. Un attimo.</p>
+</div>
+<form method="post" id="form-tocco">
+  {{ csrf_input() }}<input type="hidden" name="lat"><input type="hidden" name="lon">
+</form>
+<div id="tocco-errore" {{ '' if errore else 'hidden' }} style="margin-top:16px">
+  <div class="avviso errore">{{ i('attenzione') }}<span id="tocco-motivo">Senza la posizione non si può proseguire.</span></div>
+  <p class="tenue piccolo">Su iPhone: Impostazioni → Privacy → Localizzazione → Safari → “Mentre usi l'app”, e la posizione precisa attiva.
+    Su Android: tocca il lucchetto vicino all'indirizzo → Autorizzazioni → Posizione → Consenti.</p>
+  <button type="button" class="btn primario pieno" id="tocco-riprova">{{ i('pin') }} Riprova</button>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+  (function () {
+    var form = document.getElementById('form-tocco'), errore = document.getElementById('tocco-errore');
+    var titolo = document.getElementById('tocco-titolo'), motivo = document.getElementById('tocco-motivo');
+    var MOTIVI = { 1: 'Hai negato l’accesso alla posizione: senza non si può proseguire.',
+                   2: 'Posizione non disponibile: attiva il GPS / la localizzazione del telefono.',
+                   3: 'Il GPS non ha risposto in tempo: spostati all’aperto e riprova.' };
+    function rileva() {
+      errore.hidden = true; titolo.textContent = 'Rilevo la posizione…';
+      if (!navigator.geolocation) { mostra(2); return; }
+      navigator.geolocation.getCurrentPosition(function (p) {
+        form.lat.value = p.coords.latitude; form.lon.value = p.coords.longitude;
+        titolo.textContent = 'Posizione rilevata';
+        form.submit();
+      }, function (e) { mostra(e.code); }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    }
+    function mostra(codice) {
+      titolo.textContent = 'Posizione necessaria';
+      motivo.textContent = MOTIVI[codice] || MOTIVI[2];
+      errore.hidden = false;
+    }
+    document.getElementById('tocco-riprova').addEventListener('click', rileva);
+    if (document.body.hasAttribute('data-demo')) { titolo.textContent = 'Demo: posizione simulata'; form.submit(); return; }
+    rileva();
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, csrf_input, gps, indietro %}
+{% block titolo %}Inizia spostamento · Getvingo{% endblock %}
+{% macro destinazione(s) %}
+<button type="submit" name="a_sede_id" value="{{ s.id }}" class="destinazione-btn">
+  <span class="tondo-piccolo">{{ i('pin', 's') }}</span><span><b>{{ s.nome }}</b>{% if s.indirizzo %}<small>{{ s.indirizzo }}</small>{% endif %}{% if s.lat is none %}<small>Posizione sulla mappa fissata al primo arrivo</small>{% endif %}</span>
+</button>
+{% endmacro %}
+{% block contenuto %}
+{{ indietro(url_for('main.tocco_scelta', veicolo_id=v.id)) }}
+<div class="titolo-pagina"><div><div class="sopratitolo">{{ v.descrizione }} · …{{ v.vin[-8:] }}</div><h1>Dove la porti?</h1></div></div>
+<p class="tenue">Tocca la destinazione: il DDT viene emesso subito con il tuo nome, {{ g.utente.vettore.nome }}, “{{ g.utente.mezzo }}” e la tua firma salvata.
+  <a href="{{ url_for('main.profilo_guida', poi=url_for('main.sposta', veicolo_id=v.id)) }}">Cambia</a></p>
+<section class="partenza-fissa">
+  <span class="tondo-piccolo">{{ i('sede', 's') }}</span>
+  <div><small>Partenza · non modificabile</small>
+    <b>{{ v.sede.nome if v.sede else '—' }}</b>
+    <span>{% if arrivo and v.sede and arrivo.sede_arrivo_effettiva.id == v.sede.id %}destinazione del DDT {{ arrivo.ddt.sigla }}, arrivata il {{ arrivo.arrivo_at|data('%d/%m alle %H:%M') }}{% else %}luogo in cui l'auto è entrata in stock{% endif %}</span>
+    {% if distanza is not none %}<span class="{{ 'ok-testo' if distanza <= raggio else 'attenzione-testo' }}">{{ i('pin', 's') }} {% if distanza <= raggio %}Confermata dalla posizione del tocco{% else %}Il tocco risulta a {{ '%.0f m'|format(distanza) if distanza < 1000 else ('%.1f km'|format(distanza / 1000))|replace('.', ',') }} da qui: il mittente resta {{ v.sede.nome }}{% endif %}</span>{% endif %}
+  </div>
+</section>
+<form method="post" data-una-volta class="destinazioni">
+  {{ csrf_input() }}{{ gps() }}
+  {% if preferite %}
+  <h3>Le più usate</h3>
+  {% for s in preferite %}{{ destinazione(s) }}{% endfor %}
+  {% endif %}
+  {% for gruppo, sedi in gruppi %}
+  <h3>{{ gruppo }}</h3>
+  {% for s in sedi %}{{ destinazione(s) }}{% endfor %}
+  {% endfor %}
+</form>
+
+{# Destinazione che non c'è in elenco: si scrive e si parte lo stesso #}
+{% if v.fase != 'pronta' %}
+<form method="post" data-una-volta class="scheda destinazione-nuova">
+  {{ csrf_input() }}{{ gps() }}
+  <h3>{{ i('matita', 's') }} Non è in elenco?</h3>
+  <label class="campo"><span>Nome e indirizzo della destinazione</span>
+    <input name="nuova_destinazione" required minlength="3" maxlength="200" placeholder="Es. Mario Bianchi, Via Roma 5, Treviso" autocomplete="off"></label>
+  <div class="scelta-tipo scelta-tipo-4">
+    <label><input type="radio" name="tipo" value="altro" checked> Altro luogo</label>
+    <label><input type="radio" name="tipo" value="cliente"> Cliente</label>
+    <label><input type="radio" name="tipo" value="carrozzeria"> Carrozzeria</label>
+    <label><input type="radio" name="tipo" value="officina"> Officina</label>
+  </div>
+  <button type="submit" class="btn primario pieno">{{ i('camion') }} Emetti DDT e parti</button>
+  <small class="tenue">Il punto sulla mappa si fissa al primo “Arrivato a destinazione”; l'amministratore completa i dati in Gestione.</small>
+</form>
+{% endif %}
+{% endblock %}

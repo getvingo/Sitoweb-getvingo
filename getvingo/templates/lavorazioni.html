@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, filtro_tipologia, annulla, targa, marchio, badge_condizione %}
+{% from "_auto.html" import avanzamento_lavoro, sollecito_lavoro, cambia_stima, rientro_lavoro %}
+{% block titolo %}Lavorazioni · Getvingo{% endblock %}
+{% block larghezza %}largo{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina"><div><h1>Lavorazioni</h1>
+  <p class="descrizione-pagina">Auto presso carrozzerie e officine: a che punto sono rispetto al tempo stimato, quali sono in ritardo e quali si possono ritirare.</p></div></div>
+
+{# I 3 stati sono filtri: toccandone uno si vede solo quel gruppo, toccandolo di nuovo si torna a tutte.
+   Il totale non serve: è già nel filtro dei tipi ("Tutte") #}
+{% set st = stato or none %}{% set tp = tipo or none %}{% set tl = tipologia or none %}
+<nav class="riepilogo-pagina tre" aria-label="Filtra per stato">
+  {% for k, etichetta in [('corso', 'in tempo'), ('ritardo', 'in ritardo'), ('finita', 'da ritirare')] %}
+  <a class="tile-numero {{ k }} {{ 'attivo' if stato == k }}" href="{{ url_for('main.lavorazioni', stato=none if stato == k else k, lavorazione=tp, tipologia=tl) }}"
+     {{ 'aria-current=true' if stato == k }}><b>{{ riepilogo[k] }}</b><span>{{ etichetta }}</span></a>
+  {% endfor %}
+</nav>
+
+{{ filtro_tipologia(tipologia, 'main.lavorazioni', lavorazione=tp, stato=st) }}
+{% if tipi %}
+<nav class="interruttore filtro-gruppo in-riga" aria-label="Tipo di lavorazione">
+  <a href="{{ url_for('main.lavorazioni', tipologia=tl, stato=st) }}" class="{{ 'attivo' if not tipo }}"><span class="nome">Tutte</span> <span class="n">{{ totale }}</span></a>
+  {% for l, n in tipi %}<a href="{{ url_for('main.lavorazioni', lavorazione=l, tipologia=tl, stato=st) }}" class="{{ 'attivo' if tipo == l }}" title="{{ l }}"><span class="nome">{{ l }}</span> <span class="n">{{ n }}</span></a>{% endfor %}
+</nav>
+{% endif %}
+
+{% for sede, voci in fornitori %}
+<section class="gruppo fornitore">
+  <div class="fornitore-testa">
+    <span class="tondo lavorazione">{{ i('chiave') }}</span>
+    <div><h3>{{ sede.nome }}</h3><span class="tenue piccolo">{{ sede.TIPI[sede.tipo] }}{% if sede.indirizzo %} · {{ sede.indirizzo }}{% endif %}</span></div>
+    <span class="conteggio">{{ voci|length }}</span>
+  </div>
+  <div class="griglia-lavori">
+  {% for v, m in voci %}
+    {% set stato_m = 'finita' if m.lavorazione_completata_at else ('ritardo' if m.giorni_ritardo else 'corso') %}
+    <article class="carta-lavoro lavoro-{{ stato_m }}">
+      <a class="carta-lavoro-testa" href="{{ url_for('main.veicolo', veicolo_id=v.id) }}">
+        {{ marchio(v) }}
+        <div class="carta-lavoro-nome"><b>{{ v.descrizione }}</b><span class="tenue piccolo">{{ v.vin|vin }}{{ targa(v) }}</span></div>
+        {{ badge_condizione(v) }}
+      </a>
+      {% set qui = url_for('main.lavorazioni', lavorazione=tp, tipologia=tl, stato=st) %}
+      <div class="carta-lavoro-tipo"><span class="chip-lavoro">{{ i('chiave', 's') }} {{ m.lavorazione }}</span>{% if m.lavorazione_note %}<span class="tenue piccolo">{{ m.lavorazione_note }}</span>{% endif %}</div>
+      <div class="carta-lavoro-avanzamento">{{ avanzamento_lavoro(m) }}
+        <div class="tenue piccolo">Arrivata il {{ m.arrivo_at|data('%d/%m') }} con DDT <a href="{{ url_for('main.ddt_dettaglio', ddt_id=m.ddt.id) }}">{{ m.ddt.sigla }}</a>{% if m.lavorazione_note_fine %} · {{ m.lavorazione_note_fine }}{% endif %}</div></div>
+      <div class="carta-lavoro-rientro">{{ rientro_lavoro(v, m) }}</div>
+      <div class="carta-lavoro-azioni">
+        {{ sollecito_lavoro(m, qui) }}
+        {% if not m.lavorazione_completata_at %}{{ cambia_stima(m, qui) }}{% endif %}
+        {% if m.lavorazione_completata_at %}{{ annulla(annullabile(v.id, 'lavorazione_completata', m.ddt.id), 'Annulla completamento', qui) }}{% endif %}
+      </div>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="vuoto">{{ i('chiave') }}{% if stato %}Nessuna auto {{ {'corso': 'in tempo', 'ritardo': 'in ritardo', 'finita': 'da ritirare'}[stato] }}.<br><a class="piccolo" href="{{ url_for('main.lavorazioni', tipologia=tl) }}">Vedi tutte</a>{% else %}Nessuna auto presso fornitori.{% endif %}</div>
+{% endfor %}
+{% endblock %}

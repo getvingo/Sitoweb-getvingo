@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, pillole %}
+{% from "_danno.html" import scheda_danno %}
+{% block titolo %}Danni · Getvingo{% endblock %}
+{% block larghezza %}largo{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina"><div><h1>Danni</h1>
+  <p class="descrizione-pagina">Danni trovati in piazzale o all'arrivo. Finché un danno è aperto l’auto non può essere segnata pronta né consegnata.
+    Per segnalarne uno tocca l'adesivo dell'auto (o aprila da Stock) e premi “Segnala danno”.</p></div></div>
+{{ pillole([
+  ('aperti', 'Da verificare', url_for('main.danni'), aperti|length, 'attenzione'),
+  ('risolti', 'Risolti', url_for('main.danni', vista='risolti'), risolti|length, 'check'),
+], vista, a_destra=('risolti',)) }}
+<div class="lista griglia">
+{% for d in (aperti if vista == 'aperti' else risolti) %}
+  {{ scheda_danno(d, url_for('main.danni', vista=vista)) }}
+{% else %}
+  <div class="vuoto">{{ i('check') }}{{ 'Nessun danno da verificare.' if vista == 'aperti' else 'Nessun danno risolto.' }}</div>
+{% endfor %}
+</div>
+{% endblock %}

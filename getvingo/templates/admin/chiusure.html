@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, indietro %}
+{% block titolo %}Giorni di chiusura · Getvingo{% endblock %}
+{% block larghezza %}{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina"><div>{{ indietro(url_for('admin.indice')) }}<h1>Giorni di chiusura</h1>
+  <p class="descrizione-pagina">Nei giorni chiusi non si fissano preparazioni né appuntamenti di consegna. Sabato, domenica e feste nazionali sono già esclusi: qui si aggiungono patrono, ferie e ponti.</p></div></div>
+
+<form method="post" class="scheda" style="margin-bottom:16px" data-una-volta>
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h3>{{ i('orologio', 's') }} Aggiungi una chiusura</h3>
+  <div class="griglia-2">
+    <label class="campo"><span>Dal</span><input type="date" name="dal" required></label>
+    <label class="campo"><span>Al <span class="tenue">(facoltativo, per più giorni)</span></span><input type="date" name="al"></label>
+  </div>
+  <label class="campo"><span>Motivo <span class="tenue">(facoltativo)</span></span><input name="motivo" maxlength="120" placeholder="Es. San Liberale, ferie estive"></label>
+  <button class="btn primario">Chiudi questi giorni</button>
+</form>
+
+<h2>Prossime chiusure</h2>
+<div class="lista">
+{% for gc in chiusi %}
+  <div class="voce" style="align-items:center">
+    <div class="corpo"><h3>{{ gc.data|data('%d/%m/%Y') }}</h3><div class="tenue piccolo">{{ gc.motivo or 'Chiuso' }}</div></div>
+    <form method="post" action="{{ url_for('admin.elimina_chiusura', chiuso_id=gc.id) }}" data-una-volta>
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn-link">Riapri</button></form>
+  </div>
+{% else %}
+  <div class="vuoto">{{ i('orologio') }}Nessuna chiusura in programma oltre alle feste nazionali.</div>
+{% endfor %}
+</div>
+
+<details class="ripiega" style="margin-top:16px"><summary>Feste nazionali dei prossimi 12 mesi ({{ feste|length }})</summary>
+  <ul class="tappe">{% for giorno, nome in feste %}<li><b>{{ nome }}</b><span>{{ giorno|data('%d/%m/%Y') }}</span></li>{% endfor %}</ul>
+</details>
+{% endblock %}

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, badge_ddt, csrf_input, gps, firma_pad, immagine_firma, giorni, annulla, indietro, azioni_ddt %}
+{% from "_arrivo.html" import lavorazione_da_indicare, form_arrivo %}
+{% from "_auto.html" import in_viaggio_da, tocchi %}
+{% block titolo %}DDT {{ d.sigla }} · Getvingo{% endblock %}
+{% block larghezza %}largo{% endblock %}
+{% block contenuto %}
+{{ indietro(url_for('main.archivio_ddt')) }}
+<div class="titolo-pagina">
+  <div>
+    <div class="sopratitolo">Documento di trasporto{% if d.multiplo %} multiplo · {{ d.movimenti|length }} auto{% endif %}{% if d.revisione %} · rev. {{ d.revisione }}{% endif %}</div>
+    <h1 class="num">N. {{ d.sigla }}</h1>
+  </div>
+  {{ badge_ddt(d) }}
+</div>
+
+{% if d.annullato_at %}
+<div class="annullato-banda">Cancellato il {{ d.annullato_at|data }} da {{ d.annullato_da.nome }} · “{{ d.motivo_annullamento }}”</div>
+{% endif %}
+
+<div class="azioni azioni-testa" style="margin-bottom:14px">
+  {{ azioni_ddt(d, piccoli=True) }}
+  {% if puo_modificare %}<a class="btn piccolo" href="{{ url_for('main.ddt_modifica', ddt_id=d.id) }}">{{ i('matita', 's') }} Modifica</a>{% endif %}
+  {% if not d.multiplo and (g.utente.interno or (m.veicolo.sede_id == g.utente.sede_id and m.veicolo.stato == 'in_sede')) %}<a class="btn piccolo" href="{{ url_for('main.veicolo', veicolo_id=m.veicolo_id) }}">{{ i('auto', 's') }} Auto</a>{% endif %}
+</div>
+
+{% if m.stato == 'predisposto' and not d.annullato_at %}
+<div class="avviso {{ 'errore' if m.scaduto else 'ok' }}" style="font-weight:600">{{ i('orologio') }}
+  <span>{% if m.scaduto %}Tempo di ritiro scaduto il {{ m.ritiro_entro_at|data }}.{% else %}Da ritirare entro il {{ m.ritiro_entro_at|data }}.{% endif %}
+  Predisposto da {{ d.creato_da.nome }}.</span></div>
+{% endif %}
+
+<div class="pagina-2col">
+<div class="col-principale">
+{# Tratta in evidenza, con le tre tappe: emesso -> partito -> arrivato #}
+<section class="ddt-tratta">
+  <div class="ddt-luoghi">
+    <div><span class="etichetta">Da</span><b>{{ m.da_sede.nome if m.da_sede else '—' }}</b></div>
+    <span class="ddt-freccia" aria-hidden="true">{{ i('freccia') }}</span>
+    <div><span class="etichetta">A</span><b>{{ m.a_sede.nome }}</b>
+      {% if m.arrivo_sede %}<small class="attenzione-testo">arrivata invece a {{ m.arrivo_sede.nome }}</small>{% endif %}</div>
+  </div>
+  <ol class="ddt-tappe">
+    <li class="fatto"><span>Emesso</span><small>{{ d.emesso_at|data('%d/%m %H:%M') }}</small></li>
+    <li class="{{ 'fatto' if m.partenza_at }}"><span>Partito</span><small>{{ m.partenza_at|data('%d/%m %H:%M') if m.partenza_at else ('entro ' ~ m.ritiro_entro_at|data('%d/%m %H:%M') if m.ritiro_entro_at else '—') }}</small></li>
+    <li class="{{ 'fatto' if m.arrivo_at }}"><span>Arrivato</span><small>{{ m.arrivo_at|data('%d/%m %H:%M') if m.arrivo_at else 'in attesa' }}</small></li>
+  </ol>
+</section>
+
+{# Veicoli #}
+<section class="scheda ddt-blocco">
+  <h3 class="ddt-titolo">{{ i('auto', 's') }} {{ 'Veicoli · ' ~ d.movimenti|length if d.multiplo else 'Veicolo' }}</h3>
+  {% for x in (d.movimenti if d.multiplo else [m]) %}
+  <div class="ddt-auto">
+    {% set logo = x.veicolo.marca|marchio %}
+    {% if logo %}<span class="logo-marca"><img src="{{ logo }}" alt="{{ x.veicolo.marca }}"></span>{% else %}<span class="logo-marca sigla">{{ (x.veicolo.marca or '?')|iniziali }}</span>{% endif %}
+    <div class="corpo">
+      {% if g.utente.interno or (x.veicolo.sede_id == g.utente.sede_id and x.veicolo.stato == 'in_sede') %}<a href="{{ url_for('main.veicolo', veicolo_id=x.veicolo_id) }}"><b>{{ x.veicolo.descrizione }}</b></a>{% else %}<b>{{ x.veicolo.descrizione }}</b>{% endif %}{{ condizione(x.veicolo) }}
+      <div class="ddt-vin">{{ x.veicolo.vin|vin }}{% if x.veicolo.targa %} <span class="targa">{{ x.veicolo.targa }}</span>{% endif %}</div>
+    </div>
+    {% if d.multiplo %}<span class="tenue piccolo">{% if x.lavorazione_completata_at %}{{ i('check', 's') }} lavorazione fatta{% elif x.stato == 'chiuso' and x.con_lavorazione %}{{ giorni(x.giorni_lavorazione) }}{% endif %}</span>{% endif %}
+  </div>
+  {% endfor %}
+</section>
+
+{# Trasporto: etichetta -> valore #}
+<section class="scheda ddt-blocco">
+  <h3 class="ddt-titolo">{{ i('camion', 's') }} Trasporto</h3>
+  <dl class="ddt-dati">
+    <dt>Causale</dt><dd>{{ m.causale }}</dd>
+    <dt>Modalità</dt><dd>{{ m.mezzo or ('da indicare al ritiro' if m.stato == 'predisposto' else '—') }}</dd>
+    <dt>{{ 'Responsabile' if d.multiplo else 'Chi lo sposta' }}</dt><dd>{{ m.conducente or '— da indicare al ritiro' }}</dd>
+    <dt>Vettore</dt><dd>{{ m.vettore.nome }}</dd>
+    <dt>Lavorazione</dt><dd>{{ m.lavorazione or 'da indicare prima dell’arrivo' }}{% if not d.multiplo %} {{ giorni(m.giorni_lavorazione) }}{% endif %}
+      {% if m.lavorazione_note %}<span class="ddt-nota">{{ m.lavorazione_note }}</span>{% endif %}
+      {% if not d.multiplo and m.lavorazione_completata_at %}<span class="ok-testo">{{ i('check', 's') }} Completata il {{ m.lavorazione_completata_at|data }}{% if m.lavorazione_note_fine %} · {{ m.lavorazione_note_fine }}{% endif %}</span>{% endif %}
+      {% if d.multiplo and m.con_lavorazione and m.stato == 'chiuso' %}<span class="tenue piccolo">La fine lavorazione si segna dalla scheda di ogni auto.</span>{% endif %}</dd>
+  </dl>
+</section>
+
+{# Parti del documento #}
+<section class="ddt-parti">
+  <div class="scheda ddt-blocco">
+    <h3 class="ddt-titolo">{{ i('sede', 's') }} Mittente</h3>
+    <b>{{ mittente[0] }}</b>
+    <div class="tenue piccolo">{{ mittente[1] }}{% if mittente[2] %}<br>P.IVA {{ mittente[2] }}{% endif %}</div>
+  </div>
+  <div class="scheda ddt-blocco">
+    <h3 class="ddt-titolo">{{ i('pin', 's') }} Destinatario</h3>
+    <b>{{ m.a_sede.nome }}</b>
+    <div class="tenue piccolo">{{ m.a_sede.indirizzo }}{% if m.a_sede.piva %}<br>P.IVA {{ m.a_sede.piva }}{% endif %}</div>
+  </div>
+</section>
+</div>
+<aside class="col-laterale">
+<h2>Firme</h2>
+<div class="firme">
+  {{ immagine_firma(d.firma_mittente, 'Mittente', d.emesso_at|data) }}
+  {{ immagine_firma(m.firma_conducente, 'Responsabile' if d.multiplo else 'Conducente', (m.conducente ~ ' · ' ~ (m.partenza_at|data)) if m.partenza_at else 'al ritiro') }}
+  {{ immagine_firma(m.firma_destinatario, 'Destinatario', (m.arrivo_at|data) if m.arrivo_at else "all'arrivo") }}
+</div>
+
+{# ---------------- Azioni principali, una alla volta ---------------- #}
+{% if puo_presa %}
+<form method="post" action="{{ url_for('main.ddt_presa_in_carico', ddt_id=d.id) }}" id="presa" data-una-volta style="margin-top:18px">
+  {{ csrf_input() }}{{ gps() }}
+  <div class="scheda">
+    <h3 style="margin-bottom:12px">{{ i('camion', 's') }} Presa in carico</h3>
+    <label class="campo"><span>Chi sposta il mezzo</span><input name="conducente" value="{{ nome_suggerito }}" required maxlength="120"></label>
+    {% if not m.mezzo %}<label class="campo"><span>Modalità di trasporto</span><select name="mezzo" required><option value="">Come viaggia l'auto…</option>{% for m in MEZZI_TRASPORTO %}<option>{{ m }}</option>{% endfor %}</select></label>{% endif %}
+    {{ firma_pad("Firma del conducente", obbligatoria=True) }}
+  </div>
+  <div class="barra-azione">
+    <p class="riepilogo">verso {{ m.a_sede.nome }}</p>
+    <button type="submit" class="btn primario pieno" {{ 'disabled' if m.scaduto }}>{{ i('check') }} Prendo in carico e parto</button>
+  </div>
+</form>
+{% endif %}
+
+{% if puo_arrivo %}
+{% if not m.lavorazione %}{{ lavorazione_da_indicare(d, lavorazioni) }}{% endif %}
+{{ form_arrivo(d, m, raggio, 'arrivo') }}
+{% endif %}
+
+{% if puo_lavorazione %}
+<form method="post" action="{{ url_for('main.ddt_lavorazione_completata', ddt_id=d.id) }}" data-una-volta style="margin-top:18px">
+  {{ csrf_input() }}
+  <label class="campo"><span>Note di fine lavorazione <span class="tenue">(facoltative)</span></span><input name="note" maxlength="300" placeholder="Es. sostituito paraurti, pronta al ritiro"></label>
+  <label class="spunta"><input type="checkbox" name="rientro" value="1" checked>
+    <span>Prepara subito il DDT di rientro verso <b>{{ m.da_sede.nome if m.da_sede else 'la concessionaria' }}</b> (siete voi il mittente): chi viene a ritirare dovrà solo toccare l'adesivo, firmare e partire.</span></label>
+  <div class="barra-azione">
+    <p class="riepilogo">{{ m.lavorazione }} · da {{ m.giorni_lavorazione }} giorni</p>
+    <button type="submit" class="btn primario pieno">{{ i('check') }} Lavorazione completata</button>
+  </div>
+</form>
+{% endif %}
+
+{% if m.partenza_at and not d.annullato_at %}
+<h2>{{ i('cronometro', 's') }} Tempi del viaggio</h2>
+{% if m.stato == 'aperto' %}<p class="ddt-mini-viaggio grande">{{ i('camion', 's') }} In viaggio da {{ in_viaggio_da(m) }} · partito alle {{ m.partenza_at|data('%H:%M') }}</p>{% endif %}
+{{ tocchi(m) }}
+{% endif %}
+
+<h2>Cronologia</h2>
+<ul class="cronologia">
+  <li><span class="punto creato"></span>
+    <b>{{ 'Predisposto' if m.ritiro_entro_at else 'Creato' }} da {{ d.creato_da.nome }}</b><div class="tenue piccolo">{{ d.emesso_at|data }} · {{ d.emesso_at|da_quanto }}</div></li>
+  {% if m.ritiro_entro_at and m.partenza_at %}
+  <li><span class="punto creato"></span><b>Preso in carico da {{ m.partenza_utente.nome }}</b><div class="tenue piccolo">{{ m.partenza_at|data }}</div>
+    {{ annulla(annullabile(m.veicolo_id, 'presa_in_carico', d.id), 'Annulla presa in carico', url_for('main.ddt_dettaglio', ddt_id=d.id)) }}</li>
+  {% endif %}
+  {% for r in d.revisioni_ordinate %}
+  <li><span class="punto modifica"></span>
+    <b>Modificato da {{ r.utente.nome }}</b> <span class="tenue piccolo">· rev. {{ r.numero }}</span>
+    <div class="tenue piccolo">{{ r.at|data }}</div>
+    <ul class="cambi">{% for c in r.modifiche %}<li>{{ c.campo }}: <del>{{ c.prima }}</del> → <ins>{{ c.dopo }}</ins></li>{% endfor %}</ul></li>
+  {% endfor %}
+  {% if m.stato == 'chiuso' %}
+  <li><span class="punto arrivo"></span>
+    <b>Ricezione confermata da {{ m.arrivo_utente.nome if m.arrivo_utente else '—' }}</b>{% if m.arrivo_per_conto %} <span class="tenue piccolo">(per conto del destinatario)</span>{% endif %}
+    <div class="tenue piccolo">{{ m.arrivo_at|data }}{% if m.arrivo_sede %} · a {{ m.arrivo_sede.nome }}{% endif %}</div>
+    {% if m.note_arrivo %}<div class="piccolo" style="margin-top:4px">“{{ m.note_arrivo }}”</div>{% endif %}
+    {{ annulla(annullabile(m.veicolo_id, 'arrivo', d.id), 'Annulla arrivo', url_for('main.ddt_dettaglio', ddt_id=d.id)) }}</li>
+    {% if not d.multiplo and m.lavorazione_completata_at %}
+    <li><span class="punto arrivo"></span><b>Lavorazione completata da {{ m.lavorazione_completata_da.nome }}</b>
+      <div class="tenue piccolo">{{ m.lavorazione_completata_at|data }} · dopo {{ m.giorni_lavorazione }} giorni</div>
+      {{ annulla(annullabile(m.veicolo_id, 'lavorazione_completata', d.id), 'Annulla completamento', url_for('main.ddt_dettaglio', ddt_id=d.id)) }}</li>
+    {% endif %}
+  {% elif not d.annullato_at %}
+  <li><span class="punto"></span><span class="tenue">{{ 'In attesa di ritiro' if m.stato == 'predisposto' else 'In attesa di arrivo a ' ~ m.a_sede.nome }}</span></li>
+  {% endif %}
+  {% if d.annullato_at %}
+  <li><span class="punto"></span><b>Cancellato da {{ d.annullato_da.nome }}</b><div class="tenue piccolo">{{ d.annullato_at|data }} · {{ d.motivo_annullamento }}</div>
+    {{ annulla(annullabile(m.veicolo_id, 'annullamento', d.id), 'Ripristina il DDT', url_for('main.ddt_dettaglio', ddt_id=d.id)) }}</li>
+  {% endif %}
+</ul>
+
+{% if puo_rinnovare %}
+<form method="post" action="{{ url_for('main.ddt_rinnova', ddt_id=d.id) }}" class="azioni" style="margin-top:6px">
+  {{ csrf_input() }}<input type="hidden" name="ore" value="24">
+  <button class="btn piccolo">{{ i('orologio', 's') }} Rinnova ritiro di 24 ore</button>
+</form>
+{% endif %}
+
+{% if puo_annullare %}
+<details class="ripiega zona-pericolo" style="margin-top:24px">
+  <summary>Cancella questo DDT</summary>
+  <form method="post" action="{{ url_for('main.ddt_annulla', ddt_id=d.id) }}" class="scheda" data-una-volta>
+    {{ csrf_input() }}
+    <p class="tenue piccolo" style="margin-top:0">Il DDT sparisce dagli elenchi ma resta in archivio sotto “Cancellati”, con il tuo nome e il motivo: la numerazione fiscale non deve avere buchi senza spiegazione.
+      {% if m.stato == 'aperto' %}{{ 'Le auto torneranno' if d.multiplo else "L'auto tornerà" }} “in sede” presso {{ m.da_sede.nome if m.da_sede else 'la sede di partenza' }}.{% endif %}</p>
+    <label class="campo"><span>Motivo</span><input name="motivo" required maxlength="300" placeholder="Es. creato per errore, auto sbagliata"></label>
+    <button class="btn pericolo">Cancella DDT {{ d.sigla }}</button>
+  </form>
+</details>
+{% endif %}
+</aside>
+</div>
+{% endblock %}

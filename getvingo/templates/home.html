@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, icona_fase %}
+{% block larghezza %}largo{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina">
+  <div><div class="sopratitolo">Ciao {{ g.utente.nome.split()[0] }}</div><h1>Panoramica</h1>
+    <p class="descrizione-pagina">Cosa c'è da fare adesso e dove sono le auto, a colpo d'occhio.</p></div>
+</div>
+
+{# Barra unica: cerca o chiedi. Toccandola si allarga e diventa la chat con l'assistente #}
+<section class="chiedi" id="chiedi" data-ia="{{ '1' if ia_attiva else '' }}">
+  <form class="chiedi-barra" id="chat-form" action="{{ url_for('main.cerca') }}">
+    {{ i('chat') }}
+    <input id="chat-testo" name="q" autocomplete="off" placeholder="Cerca un'auto o chiedi…" aria-label="Cerca un'auto o chiedi all'assistente">
+    <button type="button" class="btn-mic-piccolo" id="chat-mic" aria-label="Parla">{{ i('mic') }}</button>
+  </form>
+  <div class="chiedi-corpo">
+    <div class="chat-msg" id="chat-msg">
+      {% if ia_attiva %}
+      <div class="suggerimenti">
+        <button data-domanda="Dov'è la Golf bianca?">Dov'è la Golf bianca?</button>
+        <button data-domanda="Quali auto sono ferme dai fornitori da più di una settimana?">Quali auto sono ferme dai fornitori da più di una settimana?</button>
+        <button data-domanda="Quanti veicoli commerciali abbiamo in piazzale?">Quanti veicoli commerciali abbiamo in piazzale?</button>
+      </div>
+      {% else %}
+      <div class="m assistente errore">L'assistente IA non è ancora attivo su questo server: serve la chiave Anthropic (vedi LEGGIMI.txt).
+Intanto scrivi o detta le ultime cifre del VIN, il modello o il colore e premi Invio: cerco l'auto.</div>
+      {% endif %}
+    </div>
+    <div class="chiedi-piede">
+      {% if ia_attiva %}<button type="button" class="btn-link" id="chat-voce">{{ i('voce', 's') }} Leggi le risposte ad alta voce</button>{% else %}<span></span>{% endif %}
+      <button type="button" class="btn-link" id="chat-chiudi">Chiudi</button>
+    </div>
+  </div>
+</section>
+
+<div class="panoramica">
+{% if danni %}
+<a class="allerta-danni area-danni" href="{{ url_for('main.danni') }}">
+  <span class="tondo danno">{{ i('attenzione') }}</span>
+  <div><b>{{ danni|length }} {{ 'danno da verificare' if danni|length == 1 else 'danni da verificare' }}</b>
+    <span>{{ danni[0].veicolo.descrizione }} · {{ danni[0].zona|lower }}{% if danni|length > 1 %} e altri {{ danni|length - 1 }}{% endif %}</span></div>
+  {{ i('chevron') }}
+</a>
+{% endif %}
+
+<section class="area-numeri">
+<h2>{{ i('auto') }} Le auto oggi</h2>
+<div class="riquadri">
+  {% set tot_auto = [conteggi.in_viaggio + conteggi.da_ritirare + conteggi.lavorazione + conteggi.preparazione + conteggi.pronta + conteggi.stock, 1]|max %}
+  {% macro riquadro(url, fase, icona, n, etichetta) %}
+  <a href="{{ url }}"><span class="tondo {{ fase }}">{{ i(icona) }}</span><div><strong data-conta="{{ n }}">{{ n }}</strong><span class="et">{{ etichetta }}</span></div>
+    <span class="barra-stato {{ fase }}" style="--quota: {{ '%.3f'|format(n / tot_auto) }}" aria-hidden="true"></span></a>
+  {% endmacro %}
+  {{ riquadro(url_for('main.archivio_ddt', stato='aperto'), 'in_viaggio', 'camion', conteggi.in_viaggio,
+     'In viaggio' ~ (' · ' ~ conteggi.ddt_in_viaggio ~ ' DDT' if conteggi.ddt_in_viaggio and conteggi.ddt_in_viaggio != conteggi.in_viaggio else '')) }}
+  {{ riquadro(url_for('main.archivio_ddt', stato='predisposto'), 'da_ritirare', 'ritiro', conteggi.da_ritirare, 'Da ritirare') }}
+  {{ riquadro(url_for('main.lavorazioni'), 'lavorazione', 'chiave', conteggi.lavorazione, 'Dai fornitori') }}
+  {{ riquadro(url_for('main.preparazione'), 'preparazione', 'brilla', conteggi.preparazione, 'In preparazione') }}
+  {{ riquadro(url_for('main.preparazione', vista='pronte'), 'pronta', 'bandiera', conteggi.pronta, 'Pronte consegna') }}
+  {{ riquadro(url_for('main.piazzale'), 'in_sede', 'auto', conteggi.stock, 'In stock') }}
+</div>
+
+{# La giornata di oggi dal calendario della preparazione #}
+<div class="oggi-calendario">
+  <div class="oggi-testa"><h2>{{ i('orologio') }} Oggi · {{ oggi_data.strftime('%d/%m') }}</h2>
+    <a class="btn piccolo apri-calendario" href="{{ url_for('main.preparazione', vista='corso', modo='calendario') }}">{{ i('orologio', 's') }} Apri calendario</a></div>
+  {% for e in oggi %}
+  <a class="oggi-voce ev {{ e.tipo }} {{ 'ritardo' if e.ritardo }}" href="{{ url_for('main.veicolo', veicolo_id=e.v.id) }}">
+    <span class="ora">{{ e.at|data('%H:%M') if not e.ritardo else e.at|data('%d/%m') }}</span>
+    <span class="testo"><b>{{ e.v.descrizione }}{{ condizione(e.v) }}</b>
+      <small>{{ 'In ritardo · ' if e.ritardo }}{{ tipi_evento[e.tipo] }}{{ ' · ora: ' ~ e.nota if e.tipo == 'pronta_entro' and e.nota }}</small></span>
+  </a>
+  {% else %}
+  <p class="tenue piccolo" style="margin:0">Nessuna auto da finire o consegnare oggi.</p>
+  {% endfor %}
+</div>
+</section>
+
+<section class="area-fare">
+<h2 class="importante">{{ i('attenzione') }} Da fare{% if totale_da_fare %} <span class="conta-arancio">{{ totale_da_fare }}</span>{% endif %}</h2>
+{% if not totale_da_fare %}<div class="vuoto">{{ i('check') }}Niente da fare adesso.</div>{% endif %}
+{% for chiave, titolo, icona, voci in da_fare if voci %}
+<div class="gruppo-fare gruppo-{{ chiave }}">
+  <h3 class="titolo-gruppo">{{ i(icona, 's') }} {{ titolo }} <span class="conteggio">{{ voci|length }}</span></h3>
+  <div class="lista da-fare">
+  {% for x in voci %}
+    <a class="voce l{{ x.livello }}" href="{{ x.url }}">
+      {{ icona_fase(x.v) }}
+      <div class="corpo"><span class="liv l{{ x.livello }}">{{ x.etichetta }}</span>
+        <h3>{{ x.v.descrizione }}{{ condizione(x.v) }}</h3><div class="tratta">{{ x.testo }}</div></div>
+      {{ i('chevron') }}
+    </a>
+  {% endfor %}
+  </div>
+</div>
+{% endfor %}
+</section>
+</div>
+{% endblock %}

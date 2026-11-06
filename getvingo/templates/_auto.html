@@ -1,0 +1,220 @@
+{% from "_macro.html" import i, badge_ddt, badge_veicolo, badge_condizione, marchio, durata, azioni_ddt %}
+
+{# Carta dell'auto: si riconosce a colpo d'occhio (logo, modello, versione, colore, targa, adesivo, telaio).
+   Il bordo luminoso in alto ha il colore della fase in cui si trova l'auto. #}
+{% macro carta_auto(v, con_stato=True, targa_da_aggiungere=False) %}
+<section class="carta-auto {{ v.fase }}">
+  <div class="carta-auto-testa">
+    {{ marchio(v) }}
+    <div class="carta-auto-nome">
+      <small>{{ v.marca or 'Marca non indicata' }} · {{ v.TIPOLOGIE[v.tipologia] }}</small>
+      <b>{{ v.modello or '—' }}</b>
+      <span>{{ v.versione or 'Versione non indicata' }}</span>
+    </div>
+    {% if con_stato %}<div class="carta-auto-stato">{{ badge_veicolo(v) }}{{ dettaglio_stato(v) }}</div>{% endif %}
+  </div>
+  <div class="carta-auto-chip">
+    {{ badge_condizione(v) }}
+    {% if v.colore %}<span class="chip-dato">{{ v.colore }}</span>{% endif %}
+    {% if v.targa %}<span class="targa">{{ v.targa }}</span>{% else %}<span class="chip-dato tenue">Senza targa</span>{% endif %}
+    {% if v.tag %}<span class="chip-dato">{{ i('nfc', 's') }} {{ v.tag.codice }}</span>{% endif %}
+  </div>
+  <div class="carta-auto-vin">
+    <div><small>Telaio</small>{{ v.vin|vin }}</div>
+    {% if targa_da_aggiungere %}
+    <details class="aggiungi-targa">
+      <summary class="btn piccolo">{{ i('matita', 's') }} Aggiungi targa</summary>
+      <form method="post" action="{{ url_for('main.modifica_dati_auto', veicolo_id=v.id) }}" data-una-volta>
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input name="targa" required autocapitalize="characters" class="vin" maxlength="12" placeholder="Es. GH123AB" aria-label="Targa">
+        <button class="btn primario piccolo">Salva</button>
+        <small>Si inserisce una volta sola: poi non si cambia.</small>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+</section>
+{% endmacro %}
+
+{# Dove si trova, quando è stata aggiornata la posizione (e da chi), da quando è lì #}
+{% macro info_auto(v) %}
+{% set pos = v.ultima_posizione %}{% set arrivo = v.ultimo_arrivo %}{% set mov = v.movimento_aperto %}
+<section class="riquadri-info">
+  <div class="info-tile">
+    <span class="tondo-piccolo">{{ i('pin', 's') }}</span>
+    <div><small>Dove si trova</small>
+      {% if v.stato == 'in_viaggio' and mov %}<b>In viaggio verso {{ mov.a_sede.nome }}</b><span>da {{ in_viaggio_da(mov) }}</span>
+      {% elif v.stato == 'consegnato' %}<b>Consegnata</b><span>{{ v.consegnato_at|data('%d/%m/%Y') }}{{ ' · ' ~ v.sede.nome if v.sede }}</span>
+      {% else %}<b>{{ v.sede.nome if v.sede else '—' }}</b>{% if v.sede %}<span>{{ v.sede.TIPI[v.sede.tipo] }}</span>{% endif %}{% endif %}</div>
+  </div>
+  <div class="info-tile">
+    <span class="tondo-piccolo">{{ i('orologio', 's') }}</span>
+    <div><small>Posizione aggiornata</small>
+      {% if pos %}<b>{{ pos.at|data('%d/%m/%Y alle %H:%M') }}</b><span>{{ 'da ' ~ pos.utente.nome ~ ', ' if pos.utente }}{{ pos.come }}</span>{% else %}<b>—</b>{% endif %}</div>
+  </div>
+  <div class="info-tile">
+    <span class="tondo-piccolo">{{ i('bandiera', 's') }}</span>
+    <div>{% if v.stato == 'in_sede' and arrivo and arrivo.arrivo_at and v.sede and arrivo.sede_arrivo_effettiva.id == v.sede.id %}
+      <small>Arrivata qui</small><b>{{ arrivo.arrivo_at|data('%d/%m/%Y alle %H:%M') }}</b><span>con DDT {{ arrivo.ddt.sigla }} da {{ arrivo.da_sede.nome if arrivo.da_sede else '—' }}</span>
+      {% else %}<small>In stock dal</small><b>{{ v.creato_at|data('%d/%m/%Y') }}</b>{% endif %}</div>
+  </div>
+</section>
+{% endmacro %}
+
+{# "In viaggio da …": parte dal valore calcolato dal server e avanza da solo nella pagina #}
+{% macro in_viaggio_da(m) %}<span data-in-viaggio="{{ secondi_da(m.partenza_at) }}">{{ m.partenza_at|da_quanto|replace(' fa', '') }}</span>{% endmacro %}
+
+{# Ogni tocco del viaggio con orario e minuti dal precedente; in fondo la durata totale #}
+{% macro tocchi(m, compatto=False) %}
+{% set righe = tocchi_viaggio(m) %}
+{% if righe %}
+<ol class="tocchi {{ 'compatto' if compatto }}">
+  {% for t in righe %}
+  <li class="{{ 'arrivo' if t.nome == 'Arrivo' else ('partenza' if loop.first else '') }}">
+    <span class="ora">{{ t.at|data('%H:%M') }}</span>
+    <span class="cosa"><b>{{ t.nome }}</b>{% if not compatto and t.utente %} · {{ t.utente.nome }}{% endif %}{% if not compatto and t.at.date() != righe[0].at.date() %} <small>{{ t.at|data('%d/%m') }}</small>{% endif %}</span>
+    {% if not loop.first %}<span class="delta">+{{ durata(t.dal_precedente) }}</span>{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% if m.arrivo_at %}<p class="tocchi-totale">{{ i('cronometro', 's') }} Viaggio durato {{ durata(m.arrivo_at - m.partenza_at) }}{% if righe|length > 2 %} · {{ righe|length - 2 }} {{ 'tocco' if righe|length == 3 else 'tocchi' }} durante il viaggio{% endif %}</p>{% endif %}
+{% endif %}
+{% endmacro %}
+
+{# DDT in miniatura: tratta, stato, tempo di viaggio (in corso) o tocchi con orario (chiuso) #}
+{% macro ddt_mini(d) %}{% set m = d.movimento %}{% set k = d.stato[0] %}
+<article class="ddt-mini stato-{{ k }}">
+  <a class="ddt-mini-testa" href="{{ url_for('main.ddt_dettaglio', ddt_id=d.id) }}">
+    <b>N. {{ d.sigla }}</b>{{ badge_ddt(d) }}
+  </a>
+  <div class="ddt-mini-tratta">{{ m.da_sede.nome if m.da_sede else '—' }} {{ i('freccia', 's') }} {{ m.a_sede.nome }}</div>
+  <div class="tenue piccolo">{{ d.emesso_at|data('%d/%m/%Y %H:%M') }} · {{ m.causale }}{% if m.con_lavorazione %} · {{ m.lavorazione }}{% endif %}</div>
+  {% if k == 'aperto' %}
+  <p class="ddt-mini-viaggio">{{ i('camion', 's') }} In viaggio da {{ in_viaggio_da(m) }}</p>
+  {% elif k == 'chiuso' %}
+  {{ tocchi(m, compatto=True) }}
+  {% endif %}
+  <a class="btn piccolo ddt-mini-anteprima" href="{{ url_for('main.ddt_anteprima', ddt_id=d.id) }}">{{ i('doc', 's') }} Anteprima, scarica e condividi</a>
+</article>
+{% endmacro %}
+
+{# Avanzamento della preparazione: anello che si riempie (da = % prima dell'ultimo passo) e i 4 passi.
+   Solo la vista: il passo si chiude unicamente dalla schermata del tocco NFC. #}
+{% macro avanzamento_prep(prep, fatto=None, da=None) %}
+{% set fatti = prep.fasi|length %}{% set totale = prep.FASI|length %}
+  <div class="prep-vista">
+    <div class="anello" data-anello data-da="{{ da if da is not none else prep.avanzamento }}" data-a="{{ prep.avanzamento }}">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle class="anello-fondo" cx="60" cy="60" r="52"/>
+        <circle class="anello-pieno" cx="60" cy="60" r="52"/>
+      </svg>
+      <div class="anello-testo"><b data-percento>{{ prep.avanzamento }}%</b><small>{{ fatti }} di {{ totale }}</small></div>
+    </div>
+    <div class="prep-ora">
+      <small>{{ 'Preparazione completata' if prep.completata_at else 'In preparazione · passo ' ~ (fatti + 1) ~ ' di ' ~ totale }}</small>
+      <b>{{ 'Pronta per la consegna' if prep.completata_at else prep.prossima_fase }}</b>
+      {% if fatto is not none and prep.fasi_fatte|length > fatto %}<span class="prep-appena">{{ i('check', 's') }} “{{ prep.fasi_fatte[fatto].nome }}” confermato col tocco</span>{% endif %}
+      {% if prep.pronta_entro_at and not prep.completata_at %}{% set rit = prep.pronta_entro_at|ritardo %}<span class="slot-calendario {{ 'in-ritardo' if rit }}">{{ i('orologio', 's') }} In calendario {{ prep.pronta_entro_at|slot }}{% if rit %} · in ritardo di {{ rit }}{% endif %}</span>{% endif %}
+    </div>
+  </div>
+
+  <ol class="tocco-passi">
+    {% for f in prep.FASI %}
+    <li class="{{ 'fatto' if loop.index0 < fatti else ('ora' if loop.index0 == fatti) }} {{ 'appena' if fatto == loop.index0 }}" style="--i:{{ loop.index0 }}">
+      <span class="pallino">{% if loop.index0 < fatti %}{{ i('check', 's') }}{% else %}{{ loop.index }}{% endif %}</span>
+      <span class="nome">{{ f }}</span>
+      {% if loop.index0 < fatti %}<small>{{ prep.fasi_fatte[loop.index0].at|data('%d/%m %H:%M') }}</small>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+{% endmacro %}
+
+{# Sotto l'etichetta di stato: il dettaglio della fase, toccabile (porta dove si segue quella fase) #}
+{% macro dettaglio_stato(v) %}{% set f = v.fase %}
+{% if f == 'preparazione' and v.preparazione_attiva %}{% set p = v.preparazione_attiva %}
+<a class="dettaglio-stato" href="{{ url_for('main.veicolo', veicolo_id=v.id) }}#preparazione">
+  <span class="mini-anello" style="--p:{{ p.avanzamento }}"></span>{{ p.avanzamento }}% · passo {{ p.fasi|length + 1 }} di {{ p.FASI|length }}</a>
+{% elif f in ('lavorazione', 'da_ritirare') and v.ultimo_arrivo %}{% set m = v.ultimo_arrivo %}
+<a class="dettaglio-stato" href="{{ url_for('main.ddt_dettaglio', ddt_id=m.ddt.id) }}">{{ i('chiave', 's') }} {% if f == 'da_ritirare' %}finita, da ritirare{% else %}da {{ m.giorni_lavorazione }} {{ 'giorno' if m.giorni_lavorazione == 1 else 'giorni' }}{% endif %}</a>
+{% elif f == 'in_viaggio' and v.movimento_aperto %}
+<a class="dettaglio-stato" href="{{ url_for('main.arrivo_da_tap', ddt_id=v.movimento_aperto.ddt.id) }}">{{ i('camion', 's') }} da {{ in_viaggio_da(v.movimento_aperto) }}</a>
+{% elif f == 'pronta' %}
+<a class="dettaglio-stato" href="{{ url_for('main.veicolo', veicolo_id=v.id) }}#consegna">{{ i('bandiera', 's') }} {{ v.consegna_sede.nome if v.consegna_sede else 'consegna da fissare' }}</a>
+{% elif f == 'in_sede' %}{% set arrivo = v.ultimo_arrivo %}{% set dal = arrivo.arrivo_at if arrivo and arrivo.arrivo_at else v.creato_at %}
+{% set giorni_qui = (adesso() - dal).days %}<span class="dettaglio-stato">{{ i('orologio', 's') }} {% if giorni_qui == 0 %}arrivata oggi{% elif giorni_qui == 1 %}qui da ieri{% else %}qui da {{ giorni_qui }} giorni{% endif %}</span>
+{% endif %}
+{% endmacro %}
+
+{# Lavorazione esterna: tempo passato sul tempo stimato. Verde se finita, senape in corso, arancio in ritardo.
+   anello=True: l'anello grande della schermata del tocco; altrimenti una barra che si riempie. #}
+{% macro avanzamento_lavoro(m, anello=False) %}
+{% set finita = m.lavorazione_completata_at %}{% set ritardo = m.giorni_ritardo %}
+{% set stato = 'finita' if finita else ('ritardo' if ritardo else 'corso') %}
+{% set giorno = (adesso() - m.arrivo_at).days + 1 if m.arrivo_at else 0 %}
+{% if anello %}
+<div class="prep-vista lavoro-{{ stato }}">
+  <div class="anello anello-lavoro" data-anello data-da="0" data-a="{{ m.avanzamento_lavorazione }}">
+    <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="anello-fondo" cx="60" cy="60" r="52"/><circle class="anello-pieno" cx="60" cy="60" r="52"/></svg>
+    <div class="anello-testo"><b data-percento>{{ m.avanzamento_lavorazione }}%</b><small>{% if finita %}finita{% else %}giorno {{ giorno }} di {{ m.stima_giorni }}{% endif %}</small></div>
+  </div>
+  <div class="prep-ora">
+    <small>{{ m.sede_arrivo_effettiva.nome }} · {{ m.lavorazione }}</small>
+    <b>{% if finita %}Finita, da ritirare{% elif ritardo %}In ritardo di {{ ritardo }} {{ 'giorno' if ritardo == 1 else 'giorni' }}{% else %}In lavorazione{% endif %}</b>
+    <span class="tenue piccolo">{% if finita %}finita il {{ finita|data('%d/%m alle %H:%M') }}{% else %}stimata pronta il {{ m.lavorazione_prevista_at|data('%d/%m') }} · {{ m.stima_giorni }} {{ 'giorno' if m.stima_giorni == 1 else 'giorni' }} stimati{% endif %}</span>
+  </div>
+</div>
+{% else %}
+<div class="barra-lavoro lavoro-{{ stato }}">
+  <div class="barra-avanzamento"><span data-riempi="{{ m.avanzamento_lavorazione }}" style="width:{{ m.avanzamento_lavorazione }}%"></span></div>
+  <div class="piccolo"><b>{% if finita %}Finita, da ritirare{% elif ritardo %}In ritardo di {{ ritardo }} {{ 'giorno' if ritardo == 1 else 'giorni' }}{% else %}Giorno {{ giorno }} di {{ m.stima_giorni }}{% endif %}</b>
+    · {% if finita %}il {{ finita|data('%d/%m') }}{% else %}stimata pronta il {{ m.lavorazione_prevista_at|data('%d/%m') }}{% endif %}</div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{# Sollecito: stato della richiesta al fornitore, pulsante per inviarla quando il tempo stimato è finito #}
+{% macro sollecito_lavoro(m, torna) %}
+{% set s = m.ultimo_sollecito %}
+{% if s and not s.risposta_at %}
+<p class="sollecito-stato attesa">{{ i('orologio', 's') }} Sollecito inviato il {{ s.at|data('%d/%m alle %H:%M') }} da {{ s.utente.nome }} · in attesa di risposta</p>
+{% elif s %}
+<div class="sollecito-stato risposta">{{ i('chat', 's') }} <span><b>{{ s.risposta_utente.nome if s.risposta_utente else m.sede_arrivo_effettiva.nome }}, {{ s.risposta_at|data('%d/%m %H:%M') }}:</b> “{{ s.risposta }}”{% if s.nuova_stima_giorni %} · pronta tra {{ s.nuova_stima_giorni }} {{ 'giorno' if s.nuova_stima_giorni == 1 else 'giorni' }}{% endif %}</span></div>
+{% endif %}
+{% if puo_sollecitare(m) %}
+<details class="sollecita">
+  <summary class="btn pieno btn-sollecito">{{ i('invia', 's') }} Sollecita {{ m.sede_arrivo_effettiva.nome }} · chiedi il motivo del ritardo</summary>
+  <form method="post" action="{{ url_for('main.sollecito', mov_id=m.id) }}" class="scheda" data-una-volta>
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="torna" value="{{ torna }}">
+    <label class="campo"><span>Messaggio <span class="tenue">(facoltativo: c'è già un testo pronto)</span></span>
+      <textarea name="messaggio" rows="3" maxlength="500" placeholder="La lavorazione doveva finire il {{ m.lavorazione_prevista_at|data('%d/%m') }}. Ci indicate il motivo del ritardo e quando sarà pronta?"></textarea></label>
+    <button class="btn primario">{{ i('invia', 's') }} Invia sollecito</button>
+    <small class="tenue">Il fornitore lo trova appena entra in Getvingo e risponde con il motivo e una nuova data.</small>
+  </form>
+</details>
+{% endif %}
+{% endmacro %}
+
+{# Cambia la stima dei giorni (concessionaria o fornitore) #}
+{% macro cambia_stima(m, torna) %}
+<details class="cambia-stima">
+  <summary>{{ i('matita', 's') }} Cambia la stima ({{ m.stima_giorni }} {{ 'giorno' if m.stima_giorni == 1 else 'giorni' }})</summary>
+  <form method="post" action="{{ url_for('main.stima_lavorazione', mov_id=m.id) }}" class="azioni" style="align-items:flex-end" data-una-volta>
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="torna" value="{{ torna }}">
+    <label class="campo" style="margin:0;max-width:200px"><span>Giorni di lavorazione</span><input type="number" name="giorni" min="1" max="120" value="{{ m.stima_giorni }}" required></label>
+    <button class="btn piccolo">Salva</button>
+  </form>
+</details>
+{% endmacro %}
+
+{# DDT di rientro: si crea solo dopo che la ditta esterna ha confermato la fine della lavorazione #}
+{% macro rientro_lavoro(v, m, pulsante=True) %}
+{% set pronto = v.movimento_predisposto %}
+{% if pronto %}
+<a class="rientro-stato pronto" href="{{ url_for('main.ddt_dettaglio', ddt_id=pronto.ddt.id) }}">{{ i('ritiro', 's') }} <span><b>DDT di rientro {{ pronto.ddt.sigla }} pronto</b> · da ritirare entro {{ pronto.ritiro_entro_at|data('%d/%m %H:%M') }}</span></a>
+{% elif m.lavorazione_completata_at %}
+{% if pulsante and puo_emettere(v) %}<a class="btn primario pieno" href="{{ url_for('main.sposta', veicolo_id=v.id) }}">{{ i('ritiro') }} Crea DDT di rientro</a>
+{% else %}<p class="rientro-stato libero">{{ i('check', 's') }} <span><b>Fine lavorazione confermata</b> · il DDT di rientro si può creare</span></p>{% endif %}
+{% else %}
+<p class="rientro-stato bloccato">{{ i('chiave', 's') }} <span><b>DDT di rientro non ancora disponibile</b> · si crea solo quando {{ m.sede_arrivo_effettiva.nome }} conferma la fine della lavorazione</span></p>
+{% endif %}
+{% endmacro %}

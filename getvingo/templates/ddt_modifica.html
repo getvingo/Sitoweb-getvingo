@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, csrf_input, campi_movimento, indietro %}
+{% block titolo %}Modifica DDT {{ d.sigla }} · Getvingo{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina">
+  <div>{{ indietro(url_for('main.ddt_dettaglio', ddt_id=d.id)) }}<h1>Modifica DDT</h1></div>
+</div>
+<p class="tenue piccolo">Veicolo, numero e data di emissione non si possono cambiare. Ogni modifica viene registrata
+  con il tuo nome come revisione {{ d.revisione + 1 }} e compare nel PDF.</p>
+<form method="post" data-una-volta>
+  {{ csrf_input() }}
+  <div class="scheda">
+    {{ campi_movimento(valori, gruppi_sedi, causali, lavorazioni, vettori, nomi_utenti) }}
+  </div>
+  <div class="barra-azione">
+    <button type="submit" class="btn primario pieno">{{ i('check') }} Salva modifiche</button>
+  </div>
+</form>
+{% endblock %}

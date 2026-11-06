@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, indietro, marchio, azioni_ddt %}
+{% from "_arrivo.html" import lavorazione_da_indicare, form_arrivo %}
+{% from "_auto.html" import in_viaggio_da, tocchi %}
+{% block titolo %}In viaggio · DDT {{ d.sigla }} · Getvingo{% endblock %}
+{% block contenuto %}
+{{ indietro(url_for('main.home')) }}
+<div class="titolo-pagina"><div>
+  <div class="sopratitolo">{{ i('camion', 's') }} In viaggio · DDT n. {{ d.sigla }}{% if d.revisione %} · rev. {{ d.revisione }}{% endif %}</div>
+  <h1>{{ m.veicolo.descrizione }}{{ condizione(m.veicolo) }}</h1>
+  <div class="tenue">{{ m.veicolo.vin|vin }}{% if m.veicolo.targa %} · <span class="targa">{{ m.veicolo.targa }}</span>{% endif %}</div>
+</div>{{ marchio(m.veicolo) }}</div>
+
+<section class="viaggio-carta">
+  <div class="viaggio-tratta">
+    <div class="luogo"><small>Partita da</small><b>{{ m.da_sede.nome if m.da_sede else '—' }}</b>
+      <span>{{ m.partenza_at|data('%d/%m alle %H:%M') }}</span></div>
+    <div class="viaggio-linea" aria-hidden="true">{{ i('camion') }}</div>
+    <div class="luogo arrivo"><small>Verso</small><b>{{ m.a_sede.nome }}</b>
+      <span>{{ m.a_sede.indirizzo or m.a_sede.TIPI[m.a_sede.tipo] }}</span></div>
+  </div>
+  <p class="viaggio-durata">{{ i('orologio', 's') }} In viaggio da {{ in_viaggio_da(m) }}</p>
+</section>
+
+{% if d.multiplo %}<p class="tenue piccolo" style="margin-top:10px">DDT multiplo: viaggia insieme ad altre {{ d.movimenti|length - 1 }} auto ({% for x in d.movimenti if x.id != m.id %}{{ x.veicolo.modello or x.veicolo.descrizione }} …{{ x.veicolo.vin[-8:] }}{{ ', ' if not loop.last }}{% endfor %})</p>{% endif %}
+
+<div class="viaggio-dati">
+  <div><small>{{ 'Responsabile' if d.multiplo else 'Conducente' }}</small><b>{{ m.conducente or '—' }}</b></div>
+  <div><small>Modalità</small><b>{{ m.mezzo or '—' }}</b></div>
+  <div class="largo"><small>Vettore</small><b>{{ m.vettore.nome }}</b></div>
+  <div><small>Causale</small><b>{{ m.causale }}</b></div>
+  <div class="{{ 'da-fare' if not m.lavorazione }}"><small>Lavorazione</small><b>{{ m.lavorazione or 'Da indicare' }}</b></div>
+  {% if m.lavorazione_note %}<div class="largo"><small>Dettagli lavorazione</small><b>{{ m.lavorazione_note }}</b></div>{% endif %}
+  <div class="largo"><small>Emesso</small><b>{{ d.emesso_at|data('%d/%m/%Y alle %H:%M') }} da {{ d.creato_da.nome }}</b></div>
+</div>
+
+{% if tocchi_viaggio(m)|length > 1 %}<h3 class="foglio-titolo" style="margin-top:16px">Tocchi del viaggio</h3>{{ tocchi(m) }}{% endif %}
+<div class="viaggio-azioni">{{ azioni_ddt(d) }}</div>
+<a class="btn-link piccolo" href="{{ url_for('main.ddt_dettaglio', ddt_id=d.id) }}" style="display:inline-block;margin-top:10px">Apri il DDT completo (firme, cronologia, modifiche)</a>
+
+{% if puo_arrivo %}
+{% if not m.lavorazione %}{{ lavorazione_da_indicare(d, lavorazioni, 'arrivo') }}{% endif %}
+{{ form_arrivo(d, m, raggio) }}
+{% endif %}
+{% endblock %}

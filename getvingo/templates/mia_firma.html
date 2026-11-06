@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% from "_macro.html" import csrf_input, firma_pad, indietro %}
+{% block contenuto %}
+{{ indietro(url_for('main.home')) }}
+<div class="titolo-pagina"><div><div class="sopratitolo">{{ sede.nome }}</div><h1>Firma predefinita</h1></div></div>
+<p class="tenue">Viene apposta in automatico ogni volta che confermate la ricezione di un'auto. La disegnate una volta sola.</p>
+<form method="post" data-una-volta>
+  {{ csrf_input() }}
+  <div class="scheda">{{ firma_pad("Firma del destinatario", obbligatoria=True, attuale=sede.firma) }}</div>
+  <div class="barra-azione"><button class="btn primario pieno">Salva firma</button></div>
+</form>
+{% endblock %}

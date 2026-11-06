@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, badge_ddt, indietro, immagine_firma %}
+{% from "_auto.html" import in_viaggio_da, tocchi %}
+{% block titolo %}Anteprima DDT {{ d.sigla }} · Getvingo{% endblock %}
+{% block contenuto %}
+{{ indietro(url_for('main.ddt_dettaglio', ddt_id=d.id)) }}
+<div class="anteprima-barra">
+  <a class="btn primario" href="{{ url_for('main.ddt_pdf', ddt_id=d.id, scarica=1) }}" download="DDT_{{ d.numero }}_{{ d.anno }}.pdf">{{ i('scarica', 's') }} Scarica PDF</a>
+  <button type="button" class="btn" data-condividi-pdf="{{ url_for('main.ddt_pdf', ddt_id=d.id) }}"
+          data-nome="DDT_{{ d.numero }}_{{ d.anno }}.pdf" data-titolo="DDT n. {{ d.sigla }} · {{ m.veicolo.descrizione }}">{{ i('invia', 's') }} Condividi</button>
+</div>
+
+{% set k = d.stato[0] %}
+{% if k == 'aperto' %}
+<p class="anteprima-stato aperto">{{ i('camion', 's') }} In viaggio da <b>{{ in_viaggio_da(m) }}</b> · partito alle {{ m.partenza_at|data('%H:%M') }}</p>
+{% elif k == 'chiuso' %}
+<div class="anteprima-stato chiuso">{{ i('check', 's') }} Arrivato il {{ m.arrivo_at|data('%d/%m/%Y alle %H:%M') }}{% if m.arrivo_per_conto %} · confermato per conto del destinatario{% endif %}</div>
+{% endif %}
+
+<article class="foglio-ddt">
+  <header class="foglio-testa">
+    <div><small>Mittente</small><b>{{ mittente[0] }}</b><span>{{ mittente[1] }}</span>{% if mittente[2] %}<span>P. IVA {{ mittente[2] }}</span>{% endif %}</div>
+    <div class="foglio-numero"><small>Documento di trasporto{% if d.multiplo %} multiplo{% endif %}</small><b>N. {{ d.sigla }}</b>
+      <span>{{ d.emesso_at|data('%d/%m/%Y alle %H:%M') }}</span>{% if d.revisione %}<span>Revisione {{ d.revisione }}</span>{% endif %}{{ badge_ddt(d) }}</div>
+  </header>
+
+  <section class="foglio-tratta">
+    <div><small>Luogo di partenza</small><b>{{ m.da_sede.nome if m.da_sede else '—' }}</b><span>{{ m.da_sede.indirizzo if m.da_sede else '' }}</span></div>
+    <span class="foglio-freccia">{{ i('freccia') }}</span>
+    <div><small>Destinatario</small><b>{{ destinatario[0] }}</b><span>{{ destinatario[1] }}</span>{% if destinatario[2] %}<span>P. IVA {{ destinatario[2] }}</span>{% endif %}</div>
+  </section>
+
+  <section class="foglio-griglia">
+    <div><small>Causale</small><b>{{ m.causale }}</b></div>
+    <div><small>Inizio trasporto</small><b>{{ m.partenza_at|data('%d/%m/%Y %H:%M') if m.partenza_at else 'da ritirare' }}</b></div>
+    <div><small>Modalità</small><b>{{ m.mezzo or '—' }}</b></div>
+    <div><small>{{ 'Responsabile' if d.multiplo else 'Conducente' }}</small><b>{{ m.conducente or '—' }}</b></div>
+    <div class="largo"><small>Vettore</small><b>{{ vettore[0] }}</b>{% if vettore[1] or vettore[2] %}<span>{{ vettore[1] }}{% if vettore[2] %} · P. IVA {{ vettore[2] }}{% endif %}</span>{% endif %}</div>
+    <div class="largo"><small>Lavorazione</small><b>{{ m.lavorazione or 'Da indicare' }}</b>{% if m.lavorazione_note %}<span>{{ m.lavorazione_note }}</span>{% endif %}</div>
+  </section>
+
+  <section>
+    <h3 class="foglio-titolo">Beni trasportati · {{ (d.movimenti or [m])|length }}</h3>
+    {% for x in d.movimenti or [m] %}{% set v = x.veicolo %}
+    <div class="foglio-bene">
+      <div><b>{{ v.marca }} {{ v.modello }}</b>{% if v.versione %} <span>{{ v.versione }}</span>{% endif %}
+        <small>{{ v.colore or '' }}{{ ' · ' ~ v.CONDIZIONI[v.condizione] if v.condizione }}{{ ' · ' ~ v.TIPOLOGIE[v.tipologia] }}</small></div>
+      <div class="foglio-bene-id">{{ v.vin|vin }}{% if v.targa %} <span class="targa">{{ v.targa }}</span>{% endif %}</div>
+    </div>
+    {% endfor %}
+  </section>
+
+  {% if m.partenza_at %}
+  <section>
+    <h3 class="foglio-titolo">Tocchi del viaggio</h3>
+    {{ tocchi(m) }}
+  </section>
+  {% endif %}
+
+  {% if m.note_arrivo %}<section><h3 class="foglio-titolo">Annotazioni alla consegna</h3><p>{{ m.note_arrivo }}</p></section>{% endif %}
+
+  <section class="foglio-firme">
+    {{ immagine_firma(d.firma_mittente, 'Mittente') }}
+    {{ immagine_firma(m.firma_conducente, 'Conducente' ~ (' · firma salvata' if m.firma_salvata else '')) }}
+    {{ immagine_firma(m.firma_destinatario, 'Destinatario') }}
+  </section>
+
+  {% if d.revisioni %}
+  <section><h3 class="foglio-titolo">Modifiche</h3>
+    <ul class="foglio-revisioni">{% for r in d.revisioni_ordinate %}<li><b>Rev. {{ r.numero }}</b> · {{ r.at|data('%d/%m/%Y %H:%M') }} · {{ r.utente.nome }}:
+      {% for c in r.modifiche %}{{ c.campo }} {{ c.prima }} → {{ c.dopo }}{{ '; ' if not loop.last }}{% endfor %}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+</article>
+{% endblock %}

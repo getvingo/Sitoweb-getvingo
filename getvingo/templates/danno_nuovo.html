@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, csrf_input %}
+{% block titolo %}Segnala danno · Getvingo{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina"><div><a class="torna-indietro" href="{{ url_for('main.veicolo', veicolo_id=v.id) if g.utente.interno else url_for('main.home') }}">{{ i('indietro', 's') }} Annulla e torna all'auto</a>
+  <div class="sopratitolo">{{ v.descrizione }}{{ condizione(v) }} · {{ v.vin[-8:] }}</div><h1>Segnala un danno</h1></div></div>
+{% if mov %}<div class="avviso info">{{ i('camion') }}<span>Danno rilevato all'arrivo del DDT {{ mov.ddt.sigla }} ({{ mov.da_sede.nome if mov.da_sede else '—' }} → {{ mov.sede_arrivo_effettiva.nome }}).</span></div>{% endif %}
+<form method="post" enctype="multipart/form-data" id="form-danno" data-foto data-foto-manca="Serve almeno una foto del danno.">
+  {{ csrf_input() }}{% if mov %}<input type="hidden" name="movimento" value="{{ mov.id }}">{% endif %}
+  <div class="scheda">
+    <label class="foto-vin" style="color:var(--errore)">
+      {{ i('foto') }} Scatta o allega le foto
+      <input type="file" data-foto-input accept="image/*" capture="environment" multiple hidden>
+    </label>
+    <div class="anteprime" data-foto-anteprime></div>
+    <p class="tenue piccolo" data-foto-stato style="margin:6px 0 14px">Almeno una foto. Puoi aggiungerne altre toccando di nuovo.</p>
+    <span class="etichetta">Dove si trova il danno</span>
+    <div class="zone">{% for z in zone %}<label><input type="radio" name="zona" value="{{ z }}" required> {{ z }}</label>{% endfor %}</div>
+    <label class="campo"><span>Cosa hai visto</span><input name="descrizione" required maxlength="500" placeholder="Es. graffio di 10 cm sulla portiera, ammaccatura sul paraurti"></label>
+  </div>
+  <div class="barra-azione"><button class="btn primario pieno" style="background:var(--errore);border-color:var(--errore)">{{ i('attenzione') }} Invia segnalazione</button></div>
+</form>
+{% endblock %}
+{% block script %}<script src="{{ url_for('static', filename='foto.js') }}"></script>{% endblock %}

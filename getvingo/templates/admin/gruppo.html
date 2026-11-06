@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, firma_pad, indietro %}
+{% block contenuto %}
+<div class="titolo-pagina"><div>{{ indietro(url_for('admin.aziende')) }}<h1>{{ nome }}</h1></div></div>
+
+<h2>{{ i('utente') }} Utenti del gruppo</h2>
+<div class="lista">
+{% for u in utenti %}
+  <a class="voce" href="{{ url_for('admin.utente', utente_id=u.id) }}" style="{{ 'opacity:.5' if not u.attivo }}">
+    <span class="avatar">{{ u.nome|iniziali }}</span>
+    <div class="corpo"><h3>{{ u.nome }}</h3><div class="tratta">{{ u.email }} · {{ u.RUOLI[u.ruolo] }}{{ ' · disattivato' if not u.attivo }}</div></div>
+    <span class="tenue piccolo">{{ i('matita', 's') }} Modifica</span>
+  </a>
+{% else %}
+  <div class="vuoto">Nessun utente in questo gruppo.</div>
+{% endfor %}
+</div>
+<details class="ripiega" style="margin-top:12px"><summary>+ Aggiungi un utente a {{ nome }}</summary>
+<form method="post" class="scheda" data-una-volta>
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="azione" value="utente">
+  <div class="griglia-2">
+    <label class="campo"><span>Nome e cognome</span><input name="nome" required></label>
+    <label class="campo"><span>Email</span><input type="email" name="email" required></label>
+    <label class="campo"><span>Password iniziale</span><input type="password" name="password" required minlength="8"></label>
+    {% if ruoli|length > 1 %}<label class="campo"><span>Ruolo</span><select name="ruolo">{% for k, n in ruoli.items() %}<option value="{{ k }}" {{ 'selected' if k == 'autista' }}>{{ n }}</option>{% endfor %}</select></label>{% endif %}
+  </div>
+  <button class="btn primario">Aggiungi</button>
+</form>
+</details>
+
+<h2>{{ i('doc') }} Dati e firma dell'azienda</h2>
+<form method="post" class="scheda" data-una-volta>
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="azione" value="dati">
+  <p class="tenue piccolo" style="margin-top:0">Compaiono sui DDT {{ 'come mittente' if tipo == 'concessionaria' else 'quando questo fornitore è mittente o destinatario' }}. I DDT già emessi non cambiano.</p>
+  <label class="campo"><span>Ragione sociale</span><input name="ragione_sociale" value="{{ dati.ragione_sociale if tipo == 'concessionaria' else dati.nome }}" required></label>
+  <div class="griglia-2">
+    <label class="campo"><span>Indirizzo</span><input name="indirizzo" value="{{ dati.indirizzo or '' }}"></label>
+    <label class="campo"><span>Partita IVA</span><input name="piva" value="{{ dati.piva or '' }}"></label>
+  </div>
+  {{ firma_pad("Firma unica dell'azienda (usata da tutti i suoi utenti)", attuale=dati.firma) }}
+  <button class="btn primario pieno">Salva dati e firma</button>
+</form>
+{% endblock %}

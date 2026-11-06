@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_macro.html" import i, badge_ddt, giorni, filtro_select, pillole %}
+{% block larghezza %}largo{% endblock %}
+{% block titolo %}DDT · Getvingo{% endblock %}
+{% block contenuto %}
+<div class="titolo-pagina"><div><h1>DDT <span class="conteggio">{{ elenco|length }}</span></h1>
+  <p class="descrizione-pagina">Tutti i documenti di trasporto: cerca, filtra per stato, apri o scarica il PDF.</p></div>
+  <a class="btn piccolo primario" href="{{ url_for('main.ddt_multiplo') }}">{{ i('camion', 's') }} DDT multiplo</a></div>
+
+<form id="filtri">
+  <input type="hidden" name="stato" value="{{ stato }}">
+  <div class="ricerca">{{ i('cerca') }}<input name="q" value="{{ f.q }}" placeholder="Numero, telaio, modello o autista" aria-label="Cerca DDT"></div>
+  <details class="ripiega" style="margin-top:10px" {{ 'open' if avanzati }}>
+    <summary>{{ i('gestione', 's') }} Filtri{% if avanzati %} · {{ avanzati|length }} attivi{% endif %}</summary>
+    <div class="scheda">
+      <div class="filtri-avanzati">
+        <label class="campo"><span>Mezzo</span><input name="mezzo" value="{{ f.mezzo }}" placeholder="Marca, modello o colore"></label>
+        <label class="campo"><span>VIN</span><input name="vin" value="{{ f.vin }}" placeholder="Anche solo una parte" class="vin"></label>
+        <label class="campo"><span>Chi sposta il mezzo</span><input name="conducente" value="{{ f.conducente }}"></label>
+        {{ filtro_select('tipologia', 'Tipologia', tipologie, f.tipologia, 'Tutte', auto=False) }}
+        {{ filtro_select('creato_da', 'Creato da', autori, f.creato_da, 'Chiunque', auto=False) }}
+        {{ filtro_select('destinazione', 'Destinazione', destinazioni, f.destinazione, 'Tutte', auto=False) }}
+        {{ filtro_select('lavorazione', 'Lavorazione', lavorazioni, f.lavorazione, 'Tutte', auto=False) }}
+        <label class="campo"><span>Dal</span><input type="date" name="dal" value="{{ f.dal }}"></label>
+        <label class="campo"><span>Al</span><input type="date" name="al" value="{{ f.al }}"></label>
+      </div>
+      <div class="azioni">
+        <button class="btn primario">Applica filtri</button>
+        <a class="btn" href="{{ url_for('main.archivio_ddt', stato=stato) }}">Azzera</a>
+      </div>
+    </div>
+  </details>
+</form>
+
+{% set icone = {'tutti': 'doc', 'predisposto': 'orologio', 'aperto': 'camion', 'chiuso': 'check', 'annullati': 'archivio'} %}
+{% set voci = [] %}
+{% for k, nome in filtri_stato.items() if k != 'annullati' or g.utente.ruolo == 'admin' %}
+  {% set _ = voci.append((k, nome, url_for('main.archivio_ddt', stato=k, **f_attivi), conteggi.get(k, 0), icone[k])) %}
+{% endfor %}
+{{ pillole(voci, stato, a_destra=('chiuso',)) }}
+
+<div class="lista lista-ddt">
+{% for d in elenco %}
+  {% set m = d.movimento %}
+  <a class="voce" href="{{ url_for('main.ddt_dettaglio', ddt_id=d.id) }}">
+    <div style="flex:none;width:64px" class="num ddt-num">{{ d.sigla }}{% if d.revisione %}<div class="tenue piccolo" style="font-weight:500">rev. {{ d.revisione }}</div>{% endif %}</div>
+    <div class="corpo">
+      {% if d.multiplo %}
+      <h3>{{ d.movimenti|length }} auto <span class="badge multiplo">Multiplo</span></h3>
+      <div class="tratta">{% for x in d.movimenti %}{{ x.veicolo.modello or x.veicolo.descrizione }} <span class="vin"><b>{{ x.veicolo.vin[-8:] }}</b></span>{{ ' · ' if not loop.last }}{% endfor %}</div>
+      {% else %}
+      <h3>{{ m.veicolo.descrizione }}{{ condizione(m.veicolo) }} <span class="tenue piccolo" style="font-weight:400">{{ m.veicolo.vin|vin }}</span></h3>
+      {% endif %}
+      <div class="tratta" style="margin-top:2px">{{ m.da_sede.nome if m.da_sede else '—' }} {{ i('freccia', 's') }} <b style="color:var(--testo)">{{ m.sede_arrivo_effettiva.nome }}</b></div>
+      <div class="tratta">{{ i('utente', 's') }} {{ m.conducente or 'da indicare' }} · {{ i('chiave', 's') }} {{ m.lavorazione }} · <span>creato da {{ d.creato_da.nome }}, {{ d.emesso_at|data }}</span></div>
+      {% if d.annullato_at %}<div class="tratta" style="color:var(--errore)">Cancellato da {{ d.annullato_da.nome }}: {{ d.motivo_annullamento }}</div>{% endif %}
+    </div>
+    <div class="lato">{{ badge_ddt(d) }}<div style="margin-top:6px">{{ giorni(m.giorni_lavorazione if not m.lavorazione_completata_at else none) }}</div></div>
+  </a>
+{% else %}
+  <div class="vuoto">Nessun DDT con questi filtri.</div>
+{% endfor %}
+</div>
+{% endblock %}
