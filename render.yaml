@@ -1,0 +1,41 @@
+# Infrastruttura di getVINgo su Render (Francoforte, UE): portale + database + disco per i file.
+# Su render.com: New → Blueprint → repository sitoweb-getvingo → Apply.
+services:
+  - type: web
+    name: getvingo
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /privacy
+    # prima di ogni avvio: tabelle e, solo la prima volta, il primo cliente
+    preDeployCommand: flask primo-avvio
+    autoDeploy: true
+    disk:
+      name: dati
+      mountPath: /var/data        # foto, PDF dei DDT, loghi
+      sizeGB: 5
+    envVars:
+      - key: DOVIN_DATI
+        value: /var/data
+      - key: DOVIN_DATABASE_URL
+        fromDatabase:
+          name: getvingo-db
+          property: connectionString
+      - key: DOVIN_SECRET_KEY
+        generateValue: true
+      # chiesti da Render alla creazione: il primo cliente e il suo amministratore
+      - key: GETVINGO_AZIENDA
+        sync: false
+      - key: GETVINGO_ADMIN_EMAIL
+        sync: false
+      - key: GETVINGO_ADMIN_PASSWORD
+        sync: false
+
+databases:
+  - name: getvingo-db
+    region: frankfurt
+    plan: basic-256mb
+    databaseName: getvingo
+    user: getvingo
+    postgresMajorVersion: "16"
